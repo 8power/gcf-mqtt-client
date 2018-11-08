@@ -46,6 +46,43 @@ func testHander(client MQTT.Client, msg MQTT.Message) {
 	fmt.Printf("[handler] Payload: %v\n", msg.Payload())
 }
 
+func TestTelemetryClient(t *testing.T) {
+	cfg := &MQTTClientConfig{
+		Host:              Host,
+		Port:              Port,
+		RootCertFile:      RootCertFile,
+		PrivateKeyPEMFile: PrivateKeyPEMFile,
+		ProjectID:         ProjectID,
+		CloudRegion:       CloudRegion,
+		RegistryID:        RegistryID,
+		DeviceID:          DeviceID,
+	}
+
+	mc, err := NewMQTTClient(cfg, testHander)
+	if err != nil {
+		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
+		return
+	}
+
+	err = mc.Connect()
+	if err != nil {
+		t.Errorf("Error raised in connecting: %v\n", err)
+		return
+	}
+
+	mc.RegisterTelemetryHandler(func(client MQTT.Client, msg MQTT.Message) {
+		fmt.Printf("[Telemetry handler] Topic: %v\n", msg.Topic())
+		fmt.Printf("[Telemetry handler] Payload: %v\n", msg.Payload())
+	})
+
+	fmt.Println("Now waiting for 5 minutes, just to see what happens")
+	select {
+	case <-time.After(5 * time.Minute):
+		fmt.Println("Finito")
+		return
+	}
+}
+
 func TestClient(t *testing.T) {
 	cfg := &MQTTClientConfig{
 		Host:              Host,
@@ -73,11 +110,6 @@ func TestClient(t *testing.T) {
 	mc.RegisterConfigHander(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
-	})
-
-	mc.RegisterTelemetryHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[Telemetry handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[Telemetry handler] Payload: %v\n", msg.Payload())
 	})
 
 	obj := f()
