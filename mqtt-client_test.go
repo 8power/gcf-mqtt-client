@@ -75,6 +75,16 @@ func TestTelemetryClient(t *testing.T) {
 		fmt.Printf("[Telemetry handler] Payload: %v\n", msg.Payload())
 	})
 
+	mc.RegisterStateHandler(func(client MQTT.Client, msg MQTT.Message) {
+		fmt.Printf("[State handler] Topic: %v\n", msg.Topic())
+		fmt.Printf("[State handler] Payload: %v\n", msg.Payload())
+	})
+
+	mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
+		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
+	})
+
 	fmt.Println("Now waiting for 5 minutes, just to see what happens")
 	select {
 	case <-time.After(5 * time.Minute):
@@ -107,7 +117,7 @@ func TestClient(t *testing.T) {
 		return
 	}
 
-	mc.RegisterConfigHander(func(client MQTT.Client, msg MQTT.Message) {
+	mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
 	})

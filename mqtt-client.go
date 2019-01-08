@@ -14,6 +14,9 @@ import (
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
+// Qos is the default MQTT Quality of Service
+const Qos = 0
+
 // MQTTClientConfig holds the essential elements needed to configure the MQTTClient
 type MQTTClientConfig struct {
 	Host              string
@@ -30,6 +33,7 @@ type MQTTClientConfig struct {
 type MQTTTopics struct {
 	Config    string
 	Telemetry string
+	State     string
 }
 
 // MQTTClient contains the essential elements that the MQTT client needs to function
@@ -92,22 +96,27 @@ func (mc *MQTTClient) Connect() error {
 	return nil
 }
 
-// RegisterConfigHander subscribes to the Config topic, and assigns the
+// RegisterConfigHandler subscribes to the Config topic, and assigns the
 // passed handler function to it.
-func (mc *MQTTClient) RegisterConfigHander(handler MQTT.MessageHandler) {
-	mc.Client.Subscribe(mc.Topics.Config, 0, handler)
+func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) {
+	mc.Client.Subscribe(mc.Topics.Config, Qos, handler)
+}
+
+// RegisterStateHandler subscribes the passed handler to the State topic.
+func (mc *MQTTClient) RegisterStateHandler(handler MQTT.MessageHandler) {
+	mc.Client.Subscribe(mc.Topics.State, Qos, handler)
 }
 
 // RegisterTelemetryHandler subscribes to the Telemetry topic, and assigns the
 // passed handler function to it.
 func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) {
-	mc.Client.Subscribe(mc.Topics.Telemetry, 0, handler)
+	mc.Client.Subscribe(mc.Topics.Telemetry, Qos, handler)
 }
 
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
 func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
-	token := mc.Client.Publish(mc.Topics.Telemetry, 0, false, payload)
+	token := mc.Client.Publish(mc.Topics.Telemetry, Qos, false, payload)
 	okflag := token.WaitTimeout(5 * time.Second)
 	if !okflag {
 		return fmt.Errorf("Timeout publishing telemetry event")
@@ -130,6 +139,7 @@ func getMQTTTopics(cfg *MQTTClientConfig) (topics *MQTTTopics) {
 	return &MQTTTopics{
 		Config:    fmt.Sprintf("/devices/%s/config", cfg.DeviceID),
 		Telemetry: fmt.Sprintf("/devices/%s/events", cfg.DeviceID),
+		State:     fmt.Sprintf("/devices/%s/state", cfg.DeviceID),
 	}
 }
 
