@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"time"
 
 	"github.com/pkg/errors"
@@ -93,7 +94,12 @@ func (mc *MQTTClient) Connect() error {
 	if token.Error() != nil {
 		return errors.Wrap(token.Error(), "Error connecting to MQTT Broker")
 	}
+	log.Println("")
 	return nil
+}
+
+func (mc *MQTTClient) State() {
+	fmt.Printf("[MQTTClient] IsConnected: %v. IsConnectionOpen: %v\n", mc.Client.IsConnected(), mc.Client.IsConnectionOpen())
 }
 
 // RegisterConfigHandler subscribes to the Config topic, and assigns the
@@ -116,6 +122,7 @@ func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) {
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
 func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
+	mc.State()
 	token := mc.Client.Publish(mc.Topics.Telemetry, Qos, false, payload)
 	okflag := token.WaitTimeout(5 * time.Second)
 	if !okflag {
