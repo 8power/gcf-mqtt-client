@@ -44,6 +44,23 @@ type MQTTClient struct {
 	Topics *MQTTTopics
 }
 
+var projectID = ""
+var privateKeyPEMFile = ""
+
+func credentialsProvider() (username string, password string) {
+	fmt.Printf("[credentialsProvider] creating new Credentials")
+	username = "unused"
+	password, err := jwt.CreateJWT(projectID, privateKeyPEMFile)
+	if err != nil {
+		fmt.Printf("[credentialsProvider] Error creating JWT %v", err)
+	}
+	return username, password
+}
+
+func connectionLostHandler(client MQTT.Client, err error) {
+	fmt.Printf("[connectionLostHandler] invoked with error %v\n", err)
+}
+
 // NewMQTTClient intialises and returns a new instance of a MQTTClient using
 // the passed MQTTClientValues and the default MessageHandler
 func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler) (mc *MQTTClient, err error) {
@@ -53,6 +70,7 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler) (m
 	if err != nil {
 		return mc, errors.Wrap(err, "Failed to read Root Cert File")
 	}
+
 	certpool.AppendCertsFromPEM(pemCerts)
 
 	config := &tls.Config{
@@ -64,17 +82,16 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler) (m
 		MinVersion:         tls.VersionTLS12,
 	}
 
-	token, err := jwt.CreateJWT(cfg.ProjectID, cfg.PrivateKeyPEMFile)
-	if err != nil {
-		return mc, errors.Wrap(err, "Failed to create JWT")
-	}
+	projectID = cfg.ProjectID
+	privateKeyPEMFile = cfg.PrivateKeyPEMFile
 
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(getMQTTBrokerAddress(cfg))
 	opts.SetClientID(getMQTTClientID(cfg))
 	opts.SetTLSConfig(config)
-	opts.SetUsername("unused")
-	opts.SetPassword(token)
+	opts.SetAutoReconnect(true)
+	opts.SetConnectionLostHandler(connectionLostHandler)
+	opts.SetCredentialsProvider(credentialsProvider)
 	opts.SetDefaultPublishHandler(defaultHandler)
 
 	mc.Client = MQTT.NewClient(opts)
@@ -94,12 +111,17 @@ func (mc *MQTTClient) Connect() error {
 	if token.Error() != nil {
 		return errors.Wrap(token.Error(), "Error connecting to MQTT Broker")
 	}
-	log.Println("")
+	log.Println("[Connect] MQTT Client connected")
 	return nil
 }
 
-func (mc *MQTTClient) State() {
-	fmt.Printf("[MQTTClient] IsConnected: %v. IsConnectionOpen: %v\n", mc.Client.IsConnected(), mc.Client.IsConnectionOpen())
+// Disconnect from the MQTT client
+func (mc *MQTTClient) Disconnect() {
+	mc.Client.Disconnect(250)
+}
+
+func (mc *MQTTClient) isConnectionGood() bool {
+	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
 }
 
 // RegisterConfigHandler subscribes to the Config topic, and assigns the
@@ -122,7 +144,7 @@ func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) {
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
 func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
-	mc.State()
+	//if !mc.isConnectionGood() {}
 	token := mc.Client.Publish(mc.Topics.Telemetry, Qos, false, payload)
 	okflag := token.WaitTimeout(5 * time.Second)
 	if !okflag {

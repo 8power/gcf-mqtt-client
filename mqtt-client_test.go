@@ -123,8 +123,19 @@ func TestClient(t *testing.T) {
 	})
 
 	obj := f()
+	publishMessages(obj, t, mc, 0, 10)
 
-	for i := 0; i < 10; i++ {
+	fmt.Println("Now waiting for 30 seconds for JWT to expire")
+	select {
+	case <-time.After(30 * time.Second):
+		fmt.Println("Finito")
+	}
+
+	publishMessages(obj, t, mc, 10, 10)
+}
+
+func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start int, number int) {
+	for i := start; i < start+number; i++ {
 		log.Printf("[main] Publishing Message #%d", i)
 
 		obj.Header.SequenceNumber = uint32(i)
@@ -141,11 +152,5 @@ func TestClient(t *testing.T) {
 		}
 
 		time.Sleep(1 * time.Second)
-	}
-
-	fmt.Println("Now waiting for 30 seconds, just to see what happens")
-	select {
-	case <-time.After(30 * time.Second):
-		fmt.Println("Finito")
 	}
 }
