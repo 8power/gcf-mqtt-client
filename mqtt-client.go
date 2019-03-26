@@ -45,9 +45,6 @@ type MQTTClient struct {
 	Topics *MQTTTopics
 }
 
-var projectID = ""
-var privateKeyPEMFile = ""
-
 func connectionLostHandler(client MQTT.Client, err error) {
 	fmt.Printf("[connectionLostHandler] invoked with error %v\n", err)
 }
@@ -72,9 +69,6 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 		Certificates:       []tls.Certificate{},
 		MinVersion:         tls.VersionTLS12,
 	}
-
-	projectID = cfg.ProjectID
-	privateKeyPEMFile = cfg.PrivateKeyPEMFile
 
 	opts := MQTT.NewClientOptions()
 	opts.AddBroker(getMQTTBrokerAddress(cfg))

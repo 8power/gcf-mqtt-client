@@ -2,12 +2,15 @@ package mqttclient
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"testing"
 	"time"
 
 	"github.com/RobHumphris/veh-structs/vehdata"
+	jwtGo "github.com/dgrijalva/jwt-go"
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
@@ -46,6 +49,39 @@ func testHander(client MQTT.Client, msg MQTT.Message) {
 	fmt.Printf("[handler] Payload: %v\n", msg.Payload())
 }
 
+// CreateJWT uses the projectId and privateKeyFile to make a Java Web Token (JWT)
+func createJWT(projectID string, privateKeyFile string) (string, error) {
+	keyBytes, err := ioutil.ReadFile(privateKeyFile)
+	if err != nil {
+		return "", errors.Wrap(err, "CreateJWT error")
+	}
+
+	privateKey, err := jwtGo.ParseRSAPrivateKeyFromPEM(keyBytes)
+	if err != nil {
+		return "", errors.Wrap(err, "Could not parse private key")
+	}
+
+	ts := time.Now().Unix()
+	claims := &jwtGo.StandardClaims{
+		IssuedAt:  ts,
+		ExpiresAt: ts + 1200,
+		Audience:  projectID,
+	}
+
+	token := jwtGo.NewWithClaims(jwtGo.SigningMethodRS256, claims)
+	return token.SignedString(privateKey)
+}
+
+func credentialsProvider() (username string, password string) {
+	fmt.Printf("[credentialsProvider] creating new Credentials")
+	username = "unused"
+	password, err := createJWT(ProjectID, PrivateKeyPEMFile)
+	if err != nil {
+		fmt.Printf("[credentialsProvider] Error creating JWT %v", err)
+	}
+	return username, password
+}
+
 func TestTelemetryClient(t *testing.T) {
 	cfg := &MQTTClientConfig{
 		Host:              Host,
@@ -58,7 +94,7 @@ func TestTelemetryClient(t *testing.T) {
 		DeviceID:          DeviceID,
 	}
 
-	mc, err := NewMQTTClient(cfg, testHander)
+	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
