@@ -33,10 +33,10 @@ func f() *vehdata.VehEvent {
 	}
 
 	ev.SensorEvent = &vehdata.VehSensorEvent{
-		Temperature:    23.25,
-		BatteryLevel:   1234,
-		CoulombCounter: 1,
-		Current:        2,
+		Temperature:  23.25,
+		BatteryLevel: 1234,
+		Counter:      1,
+		Current:      2,
 	}
 	return ev
 }
@@ -139,7 +139,12 @@ func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start 
 		log.Printf("[main] Publishing Message #%d", i)
 
 		obj.Header.SequenceNumber = uint32(i)
-		payload, err := proto.Marshal(obj)
+
+		evs := &vehdata.VehEvents{}
+		evs.DeviceMACAddress = "00:01:02:03:04:05"
+		evs.Events = append(evs.Events, obj)
+
+		payload, err := proto.Marshal(evs)
 		if err != nil {
 			t.Errorf("Error marshalling Protobuffer %v", err)
 			return
