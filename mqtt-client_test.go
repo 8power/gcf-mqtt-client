@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/RobHumphris/veh-structs/vehdata"
+	"github.com/RobHumphris/veh-structs/vehpubsub"
 	jwtGo "github.com/dgrijalva/jwt-go"
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
@@ -141,7 +142,7 @@ func TestClient(t *testing.T) {
 		DeviceID:          DeviceID,
 	}
 
-	mc, err := NewMQTTClient(cfg, testHander)
+	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
@@ -186,7 +187,13 @@ func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start 
 			return
 		}
 
-		err = mc.PublishTelemetryEvent(payload)
+		messages, err := vehpubsub.PackVehMessages(payload, vehdata.VehMessage_VehGatewayStatus)
+		if err != nil {
+			t.Errorf("PackVehMessages error %v", err)
+			return
+		}
+
+		err = mc.PublishTelemetryEvent(messages)
 		if err != nil {
 			t.Errorf("Error Publishing payload %v", err)
 			return
