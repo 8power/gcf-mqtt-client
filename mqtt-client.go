@@ -40,9 +40,10 @@ type MQTTTopics struct {
 
 // MQTTClient contains the essential elements that the MQTT client needs to function
 type MQTTClient struct {
-	Client MQTT.Client
-	Values *MQTTClientConfig
-	Topics *MQTTTopics
+	Client    MQTT.Client
+	Values    *MQTTClientConfig
+	Topics    *MQTTTopics
+	connected bool
 }
 
 func connectionLostHandler(client MQTT.Client, err error) {
@@ -52,11 +53,11 @@ func connectionLostHandler(client MQTT.Client, err error) {
 // NewMQTTClient intialises and returns a new instance of a MQTTClient using
 // the passed MQTTClientValues and the default MessageHandler
 func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider) (mc *MQTTClient, err error) {
-	mc = &MQTTClient{}
+
 	certpool := x509.NewCertPool()
 	pemCerts, err := ioutil.ReadFile(cfg.RootCertFile)
 	if err != nil {
-		return mc, errors.Wrap(err, "Failed to read Root Cert File")
+		return nil, errors.Wrap(err, "Failed to read Root Cert File")
 	}
 
 	certpool.AppendCertsFromPEM(pemCerts)
@@ -79,9 +80,13 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 	opts.SetCredentialsProvider(credentialsProvider)
 	opts.SetDefaultPublishHandler(defaultHandler)
 
-	mc.Client = MQTT.NewClient(opts)
-	mc.Values = cfg
-	mc.Topics = getMQTTTopics(cfg)
+	mc = &MQTTClient{
+		Client:    MQTT.NewClient(opts),
+		Values:    cfg,
+		Topics:    getMQTTTopics(cfg),
+		connected: false,
+	}
+
 	return mc, nil
 }
 
@@ -97,34 +102,58 @@ func (mc *MQTTClient) Connect() error {
 		return errors.Wrap(token.Error(), "Error connecting to MQTT Broker")
 	}
 	log.Println("[Connect] MQTT Client connected")
+	mc.connected = true
 	return nil
 }
 
 // Disconnect from the MQTT client
 func (mc *MQTTClient) Disconnect() {
 	mc.Client.Disconnect(250)
+	mc.connected = false
 }
+
+// NotConnected is raised when...
+var NotConnected = fmt.Errorf("Not Connected")
 
 // RegisterConfigHandler subscribes to the Config topic, and assigns the
 // passed handler function to it.
-func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) {
+func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
+	if !mc.connected {
+		return NotConnected
+	}
+
 	mc.Client.Subscribe(mc.Topics.Config, Qos, handler)
+	return nil
 }
 
 // RegisterStateHandler subscribes the passed handler to the State topic.
-func (mc *MQTTClient) RegisterStateHandler(handler MQTT.MessageHandler) {
+func (mc *MQTTClient) RegisterStateHandler(handler MQTT.MessageHandler) error {
+	if !mc.connected {
+		return NotConnected
+	}
+
 	mc.Client.Subscribe(mc.Topics.State, Qos, handler)
+	return nil
 }
 
 // RegisterTelemetryHandler subscribes to the Telemetry topic, and assigns the
 // passed handler function to it.
-func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) {
+func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) error {
+	if !mc.connected {
+		return NotConnected
+	}
+
 	mc.Client.Subscribe(mc.Topics.Telemetry, Qos, handler)
+	return nil
 }
 
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
 func (mc *MQTTClient) PublishTelemetryEvent(messages []vehdata.VehMessage) error {
+	if !mc.connected {
+		return NotConnected
+	}
+
 	for _, msg := range messages {
 		payload, err := proto.Marshal(&msg)
 		if err != nil {

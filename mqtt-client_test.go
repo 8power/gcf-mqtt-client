@@ -165,10 +165,35 @@ func TestClient(t *testing.T) {
 	fmt.Println("Now waiting for 30 seconds for JWT to expire")
 	select {
 	case <-time.After(30 * time.Second):
-		fmt.Println("Finito")
+		fmt.Println("Times up, should have needed a new JWT by now")
 	}
 
 	publishMessages(obj, t, mc, 10, 10)
+
+	// Now disconnect and ensure that nothing more is sent
+	mc.Disconnect()
+	time.Sleep(5 * time.Second)
+	msg, err := createMessage(obj)
+	err = mc.PublishTelemetryEvent(msg)
+	if err == nil {
+		t.Errorf("should not allow publishing of messages")
+	}
+
+	if err != NotConnected {
+		t.Errorf("error should be NotConnected not %v", err)
+	}
+}
+
+func createMessage(obj *vehdata.VehEvent) ([]vehdata.VehMessage, error) {
+	evs := &vehdata.VehEvents{}
+	evs.DeviceMACAddress = "00:01:02:03:04:05"
+	evs.Events = append(evs.Events, obj)
+	payload, err := proto.Marshal(evs)
+	if err != nil {
+		return nil, fmt.Errorf("Error marshalling Protobuffer %v", err)
+	}
+
+	return vehpubsub.PackVehMessages(payload, vehdata.VehMessage_VehGatewayStatus)
 }
 
 func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start int, number int) {
@@ -176,18 +201,7 @@ func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start 
 		log.Printf("[main] Publishing Message #%d", i)
 
 		obj.Header.SequenceNumber = uint32(i)
-
-		evs := &vehdata.VehEvents{}
-		evs.DeviceMACAddress = "00:01:02:03:04:05"
-		evs.Events = append(evs.Events, obj)
-
-		payload, err := proto.Marshal(evs)
-		if err != nil {
-			t.Errorf("Error marshalling Protobuffer %v", err)
-			return
-		}
-
-		messages, err := vehpubsub.PackVehMessages(payload, vehdata.VehMessage_VehGatewayStatus)
+		messages, err := createMessage(obj)
 		if err != nil {
 			t.Errorf("PackVehMessages error %v", err)
 			return
@@ -198,7 +212,6 @@ func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start 
 			t.Errorf("Error Publishing payload %v", err)
 			return
 		}
-
 		time.Sleep(1 * time.Second)
 	}
 }
