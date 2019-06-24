@@ -96,7 +96,7 @@ func (mc *MQTTClient) Connect() error {
 	token := mc.Client.Connect()
 	okflag := token.WaitTimeout(6 * time.Second)
 	if !okflag {
-		return fmt.Errorf("Timeout waiting to connect to")
+		return errors.Wrap(token.Error(), "Timeout waiting to connect.")
 	}
 	if token.Error() != nil {
 		return errors.Wrap(token.Error(), "Error connecting to MQTT Broker")
