@@ -118,7 +118,7 @@ var NotConnected = fmt.Errorf("Not Connected")
 // RegisterConfigHandler subscribes to the Config topic, and assigns the
 // passed handler function to it.
 func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
-	if !mc.connected {
+	if mc == nil || !mc.connected {
 		return NotConnected
 	}
 
@@ -128,7 +128,7 @@ func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
 
 // RegisterStateHandler subscribes the passed handler to the State topic.
 func (mc *MQTTClient) RegisterStateHandler(handler MQTT.MessageHandler) error {
-	if !mc.connected {
+	if mc == nil || !mc.connected {
 		return NotConnected
 	}
 
@@ -139,7 +139,7 @@ func (mc *MQTTClient) RegisterStateHandler(handler MQTT.MessageHandler) error {
 // RegisterTelemetryHandler subscribes to the Telemetry topic, and assigns the
 // passed handler function to it.
 func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) error {
-	if !mc.connected {
+	if mc == nil || !mc.connected {
 		return NotConnected
 	}
 
@@ -150,7 +150,7 @@ func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) erro
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
 func (mc *MQTTClient) PublishTelemetryEvent(messages []vehdata.VehMessage) error {
-	if !mc.connected {
+	if mc == nil || !mc.connected {
 		return NotConnected
 	}
 
