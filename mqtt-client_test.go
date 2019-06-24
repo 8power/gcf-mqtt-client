@@ -21,7 +21,7 @@ const (
 	Port              = "8883"
 	RootCertFile      = "/home/rob/.certs/roots.pem"
 	PrivateKeyPEMFile = "/home/rob/.certs/iot_rsa_private.pem"
-	ProjectID         = "vibration-energy-harvesting"
+	ProjectID         = "skillful-mason-244208"
 	CloudRegion       = "europe-west1"
 	RegistryID        = "vibration-energy-harvesting-registry"
 	DeviceID          = "dell-development-laptop"
