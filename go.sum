@@ -1,5 +1,5 @@
-github.com/RobHumphris/veh-structs v0.0.0-20190625104408-ebbd66678f26 h1:u3cP9JqGAxeAQhZoyvFxquqZs0RUdJxHbOHiyOBNo2A=
-github.com/RobHumphris/veh-structs v0.0.0-20190625104408-ebbd66678f26/go.mod h1:4t1Yfxz6U4VBG9Jx1Bm8/sweBCx3CBk/8DrTOhXvX+0=
+github.com/RobHumphris/veh-structs v0.0.0-20190702114838-4eae435dbe41 h1:JsFrobKhl5sLBEAGevOgshOK0AjAvKEVP4YNyDSvbi8=
+github.com/RobHumphris/veh-structs v0.0.0-20190702114838-4eae435dbe41/go.mod h1:4t1Yfxz6U4VBG9Jx1Bm8/sweBCx3CBk/8DrTOhXvX+0=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible h1:7qlOGliEKZXTDg6OTjfoBKDXWrumCAMpl/TFQ4/5kLM=
 github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZmtrrCbhqsmaPHjLKYnJCaQ=
 github.com/eclipse/paho.mqtt.golang v1.1.1 h1:iPJYXJLaViCshRTW/PSqImSS6HJ2Rf671WR0bXZ2GIU=
