@@ -1,4 +1,4 @@
-module github.com/RobHumphris/gcf-mqtt-client
+module github.com/8power/gcf-mqtt-client
 
 go 1.12
 
