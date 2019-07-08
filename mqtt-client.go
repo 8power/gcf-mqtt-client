@@ -8,10 +8,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
-
-	"github.com/RobHumphris/veh-structs/vehdata"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
@@ -31,19 +28,12 @@ type MQTTClientConfig struct {
 	DeviceID          string
 }
 
-// MQTTTopics hold the two Topics that the GCF cloud uses
-type MQTTTopics struct {
-	Config    string
-	Telemetry string
-	State     string
-}
-
 // MQTTClient contains the essential elements that the MQTT client needs to function
 type MQTTClient struct {
-	Client    MQTT.Client
-	Values    *MQTTClientConfig
-	Topics    *MQTTTopics
-	connected bool
+	Client         MQTT.Client
+	Values         *MQTTClientConfig
+	connected      bool
+	telemetryTopic string
 }
 
 func connectionLostHandler(client MQTT.Client, err error) {
@@ -83,9 +73,10 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 	mc = &MQTTClient{
 		Client:    MQTT.NewClient(opts),
 		Values:    cfg,
-		Topics:    getMQTTTopics(cfg),
 		connected: false,
 	}
+
+	mc.telemetryTopic = mc.formatMQTTTopicString("events")
 
 	return mc, nil
 }
@@ -112,63 +103,29 @@ func (mc *MQTTClient) Disconnect() {
 	mc.connected = false
 }
 
-// NotConnected is raised when...
-var NotConnected = fmt.Errorf("Not Connected")
+// ErrorNotConnected is raised when...
+var ErrorNotConnected = fmt.Errorf("Not Connected")
 
-// RegisterConfigHandler subscribes to the Config topic, and assigns the
+// RegisterSubscriptionHandler subscribes to the Config topic, and assigns the
 // passed handler function to it.
-func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
+func (mc *MQTTClient) RegisterSubscriptionHandler(topic string, handler MQTT.MessageHandler) error {
 	if mc == nil || !mc.connected {
-		return NotConnected
+		return ErrorNotConnected
 	}
 
-	mc.Client.Subscribe(mc.Topics.Config, Qos, handler)
-	return nil
-}
-
-// RegisterStateHandler subscribes the passed handler to the State topic.
-func (mc *MQTTClient) RegisterStateHandler(handler MQTT.MessageHandler) error {
-	if mc == nil || !mc.connected {
-		return NotConnected
-	}
-
-	mc.Client.Subscribe(mc.Topics.State, Qos, handler)
-	return nil
-}
-
-// RegisterTelemetryHandler subscribes to the Telemetry topic, and assigns the
-// passed handler function to it.
-func (mc *MQTTClient) RegisterTelemetryHandler(handler MQTT.MessageHandler) error {
-	if mc == nil || !mc.connected {
-		return NotConnected
-	}
-
-	mc.Client.Subscribe(mc.Topics.Telemetry, Qos, handler)
+	t := mc.formatMQTTTopicString(topic)
+	mc.Client.Subscribe(t, Qos, handler)
 	return nil
 }
 
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
-func (mc *MQTTClient) PublishTelemetryEvent(messages []vehdata.VehMessage) error {
+func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
 	if mc == nil || !mc.connected {
-		return NotConnected
+		return ErrorNotConnected
 	}
 
-	for _, msg := range messages {
-		payload, err := proto.Marshal(&msg)
-		if err != nil {
-			return errors.Wrap(err, "proto marshal error")
-		}
-		err = mc.publish(payload)
-		if err != nil {
-			return errors.Wrap(err, "publish error")
-		}
-	}
-	return nil
-}
-
-func (mc *MQTTClient) publish(payload []byte) error {
-	token := mc.Client.Publish(mc.Topics.Telemetry, Qos, false, payload)
+	token := mc.Client.Publish(mc.telemetryTopic, Qos, false, payload)
 	okflag := token.WaitTimeout(5 * time.Second)
 	if !okflag {
 		return fmt.Errorf("Timeout publishing telemetry event")
@@ -176,6 +133,7 @@ func (mc *MQTTClient) publish(payload []byte) error {
 	if token.Error() != nil {
 		return errors.Wrap(token.Error(), "Error publishing telemetry event")
 	}
+
 	return nil
 }
 
@@ -187,12 +145,8 @@ func getMQTTClientID(cfg *MQTTClientConfig) string {
 		cfg.DeviceID)
 }
 
-func getMQTTTopics(cfg *MQTTClientConfig) (topics *MQTTTopics) {
-	return &MQTTTopics{
-		Config:    fmt.Sprintf("/devices/%s/config", cfg.DeviceID),
-		Telemetry: fmt.Sprintf("/devices/%s/events", cfg.DeviceID),
-		State:     fmt.Sprintf("/devices/%s/state", cfg.DeviceID),
-	}
+func (mc *MQTTClient) formatMQTTTopicString(topic string) string {
+	return fmt.Sprintf("/devices/%s/%s", mc.Values.DeviceID, topic)
 }
 
 func getMQTTBrokerAddress(cfg *MQTTClientConfig) string {

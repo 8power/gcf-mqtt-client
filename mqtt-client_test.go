@@ -1,20 +1,24 @@
 package mqttclient
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"testing"
 	"time"
 
-	"github.com/RobHumphris/veh-structs/vehdata"
-	"github.com/RobHumphris/veh-structs/vehpubsub"
 	jwtGo "github.com/dgrijalva/jwt-go"
-	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
+
+type TestMessage struct {
+	Mac            string `json:"mac"`
+	Timestamp      int    `json:"timestamp"`
+	SequenceNumber int    `json:"sequenceNumber"`
+}
 
 const (
 	Host              = "mqtt.googleapis.com"
@@ -26,24 +30,6 @@ const (
 	RegistryID        = "vibration-energy-harvesting-registry"
 	DeviceID          = "dell-development-laptop"
 )
-
-func f() *vehdata.VehEvent {
-	ev := &vehdata.VehEvent{}
-	ev.Header = &vehdata.VehEventHeader{
-		Timestamp:      uint32(time.Now().Unix()),
-		SequenceNumber: 0,
-		Event:          4,
-		Length:         18,
-	}
-
-	ev.SensorEvent = &vehdata.VehSensorEvent{
-		Temperature:  23.25,
-		BatteryLevel: 1234,
-		Counter:      1,
-		Current:      2,
-	}
-	return ev
-}
 
 func testHander(client MQTT.Client, msg MQTT.Message) {
 	fmt.Printf("[handler] Topic: %v\n", msg.Topic())
@@ -107,17 +93,7 @@ func TestTelemetryClient(t *testing.T) {
 		return
 	}
 
-	mc.RegisterTelemetryHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[Telemetry handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[Telemetry handler] Payload: %v\n", msg.Payload())
-	})
-
-	mc.RegisterStateHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[State handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[State handler] Payload: %v\n", msg.Payload())
-	})
-
-	mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+	mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
 	})
@@ -154,12 +130,16 @@ func TestClient(t *testing.T) {
 		return
 	}
 
-	mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+	mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
 	})
 
-	obj := f()
+	obj := &TestMessage{
+		Mac:            "AA:BB:CC:DD:EE:FF",
+		SequenceNumber: 1,
+		Timestamp:      int(time.Now().Unix()),
+	}
 	publishMessages(obj, t, mc, 0, 10)
 
 	fmt.Println("Now waiting for 30 seconds for JWT to expire")
@@ -173,45 +153,37 @@ func TestClient(t *testing.T) {
 	// Now disconnect and ensure that nothing more is sent
 	mc.Disconnect()
 	time.Sleep(5 * time.Second)
-	msg, err := createMessage(obj)
-	err = mc.PublishTelemetryEvent(msg)
-	if err == nil {
-		t.Errorf("should not allow publishing of messages")
-	}
 
-	if err != NotConnected {
-		t.Errorf("error should be NotConnected not %v", err)
-	}
-}
-
-func createMessage(obj *vehdata.VehEvent) ([]vehdata.VehMessage, error) {
-	evs := &vehdata.VehEvents{}
-	evs.DeviceMACAddress = "00:01:02:03:04:05"
-	evs.Events = append(evs.Events, obj)
-	payload, err := proto.Marshal(evs)
+	payload, err := json.Marshal(obj)
 	if err != nil {
-		return nil, fmt.Errorf("Error marshalling Protobuffer %v", err)
-	}
+		t.Errorf("JSON Marshal error %v", err)
+	} else {
+		err = mc.PublishTelemetryEvent(payload)
+		if err == nil {
+			t.Errorf("should not allow publishing of messages")
+		}
 
-	return vehpubsub.PackVehMessages(payload, vehdata.VehMessage_VehGatewayStatus)
+		if err != ErrorNotConnected {
+			t.Errorf("error should be NotConnected not %v", err)
+		}
+	}
 }
 
-func publishMessages(obj *vehdata.VehEvent, t *testing.T, mc *MQTTClient, start int, number int) {
+func publishMessages(obj *TestMessage, t *testing.T, mc *MQTTClient, start int, number int) {
 	for i := start; i < start+number; i++ {
 		log.Printf("[main] Publishing Message #%d", i)
+		obj.SequenceNumber = i
 
-		obj.Header.SequenceNumber = uint32(i)
-		messages, err := createMessage(obj)
+		payload, err := json.Marshal(obj)
 		if err != nil {
-			t.Errorf("PackVehMessages error %v", err)
-			return
+			t.Errorf("JSON Marshal error %v", err)
+		} else {
+			err = mc.PublishTelemetryEvent(payload)
+			if err != nil {
+				t.Errorf("Error Publishing payload %v", err)
+				return
+			}
+			time.Sleep(1 * time.Second)
 		}
-
-		err = mc.PublishTelemetryEvent(messages)
-		if err != nil {
-			t.Errorf("Error Publishing payload %v", err)
-			return
-		}
-		time.Sleep(1 * time.Second)
 	}
 }
