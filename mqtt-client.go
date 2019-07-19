@@ -84,21 +84,23 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 // Connect attempts to connect to the MQTT Broker and returns an error if
 // unsuccessful
 func (mc *MQTTClient) Connect() error {
+	log.Println("[MQTTClient] Connecting")
 	token := mc.Client.Connect()
 	okflag := token.WaitTimeout(6 * time.Second)
 	if !okflag {
-		return errors.Wrap(token.Error(), "Timeout waiting to connect.")
+		return fmt.Errorf("Timeout waiting to connect")
 	}
 	if token.Error() != nil {
 		return errors.Wrap(token.Error(), "Error connecting to MQTT Broker")
 	}
-	log.Println("[Connect] MQTT Client connected")
+	log.Println("[MQTTClient] Connected")
 	mc.connected = true
 	return nil
 }
 
 // Disconnect from the MQTT client
 func (mc *MQTTClient) Disconnect() {
+	log.Println("[MQTTClient] Disconnecting")
 	mc.Client.Disconnect(250)
 	mc.connected = false
 }
@@ -150,5 +152,7 @@ func (mc *MQTTClient) formatMQTTTopicString(topic string) string {
 }
 
 func getMQTTBrokerAddress(cfg *MQTTClientConfig) string {
-	return fmt.Sprintf("ssl://%s:%s", cfg.Host, cfg.Port)
+	brokerAddress := fmt.Sprintf("ssl://%s:%s", cfg.Host, cfg.Port)
+	log.Printf("[MQTTClient] getMQTTBrokerAddress %s", brokerAddress)
+	return brokerAddress
 }
