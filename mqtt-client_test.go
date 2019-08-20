@@ -84,25 +84,30 @@ func TestTelemetryClient(t *testing.T) {
 	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
-		return
 	}
 
 	err = mc.Connect()
 	if err != nil {
-		t.Errorf("Error raised in connecting: %v\n", err)
-		return
+		t.Errorf("Error raised in Connect: %v\n", err)
 	}
 
-	mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
+	err = mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
 	})
+	if err != nil {
+		t.Errorf("Error raised in RegisterSubscriptionHandler: %v\n", err)
+	}
 
-	fmt.Println("Now waiting for 5 minutes, just to see what happens")
+	fmt.Println("Now waiting for 30 seconds, just to see what happens")
 	select {
-	case <-time.After(5 * time.Minute):
+	case <-time.After(30 * time.Second):
 		fmt.Println("Finito")
-		return
+	}
+
+	err = mc.Disconnect()
+	if err != nil {
+		t.Errorf("Error raised during Disconnect: %v\n", err)
 	}
 }
 

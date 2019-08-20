@@ -99,10 +99,15 @@ func (mc *MQTTClient) Connect() error {
 }
 
 // Disconnect from the MQTT client
-func (mc *MQTTClient) Disconnect() {
+func (mc *MQTTClient) Disconnect() error {
+	if mc == nil || !mc.connected {
+		return ErrorNotConnected
+	}
+
 	log.Println("[MQTTClient] Disconnecting")
 	mc.Client.Disconnect(250)
 	mc.connected = false
+	return nil
 }
 
 // ErrorNotConnected is raised when...
