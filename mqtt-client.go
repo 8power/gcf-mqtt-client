@@ -110,6 +110,14 @@ func (mc *MQTTClient) Disconnect() error {
 	return nil
 }
 
+// IsConnected returns true if connected
+func (mc *MQTTClient) IsConnected() bool {
+	if mc == nil || !mc.connected {
+		return false
+	}
+	return true
+}
+
 // ErrorNotConnected is raised when...
 var ErrorNotConnected = fmt.Errorf("Not Connected")
 

@@ -91,6 +91,9 @@ func TestTelemetryClient(t *testing.T) {
 		t.Errorf("Error raised in Connect: %v\n", err)
 	}
 
+	isConnected := mc.IsConnected()
+	fmt.Printf("IsConnected returns %t\n", isConnected)
+
 	err = mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
