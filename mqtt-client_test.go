@@ -60,11 +60,11 @@ func createJWT(projectID string, privateKeyFile string) (string, error) {
 }
 
 func credentialsProvider() (username string, password string) {
-	fmt.Printf("[credentialsProvider] creating new Credentials")
+	fmt.Println("[credentialsProvider] creating new Credentials")
 	username = "unused"
 	password, err := createJWT(ProjectID, PrivateKeyPEMFile)
 	if err != nil {
-		fmt.Printf("[credentialsProvider] Error creating JWT %v", err)
+		fmt.Printf("[credentialsProvider] Error creating JWT %v\n", err)
 	}
 	return username, password
 }
@@ -94,15 +94,31 @@ func TestTelemetryClient(t *testing.T) {
 	isConnected := mc.IsConnected()
 	fmt.Printf("IsConnected returns %t\n", isConnected)
 
-	err = mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
+	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
+		fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
 	})
 	if err != nil {
-		t.Errorf("Error raised in RegisterSubscriptionHandler: %v\n", err)
+		t.Errorf("Error raised in RegisterConfigHandler: %v\n", err)
 	}
 
-	fmt.Println("Now waiting for 30 seconds, just to see what happens")
+	err = mc.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
+		fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
+		fmt.Printf("[command handler] Payload: %v\n", msg.Payload())
+	})
+	if err != nil {
+		t.Errorf("Error raised in RegisterCommandHandler: %v\n", err)
+	}
+
+	fmt.Println("Publishing a config type of thing")
+	publishConfig := `{"config": "test here, there, there, and everywhere"}`
+	err = mc.PublishState([]byte(publishConfig))
+	if err != nil {
+		t.Errorf("Error raised in PublishConfig: %v\n", err)
+	}
+
+	var waitTime = 30
+	fmt.Printf("Now waiting for %d seconds, just to see what happens\n", waitTime)
 	select {
 	case <-time.After(30 * time.Second):
 		fmt.Println("Finito")
@@ -138,10 +154,24 @@ func TestClient(t *testing.T) {
 		return
 	}
 
-	mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
+	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
+		fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
+
+		reply := fmt.Sprintf("%s reply", msg.Payload())
+		mc.PublishState([]byte(reply))
 	})
+	if err != nil {
+		t.Errorf("Error raised in RegisterConfigHandler: %v\n", err)
+	}
+
+	err = mc.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
+		fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
+		fmt.Printf("[command handler] Payload: %v\n", msg.Payload())
+	})
+	if err != nil {
+		t.Errorf("Error raised in RegisterCommandHandler: %v\n", err)
+	}
 
 	obj := &TestMessage{
 		Mac:            "AA:BB:CC:DD:EE:FF",

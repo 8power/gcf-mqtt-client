@@ -16,6 +16,10 @@ import (
 // Qos is the default MQTT Quality of Service
 const Qos = 0
 
+// ErrorNotConnected is raised when...
+var ErrorNotConnected = fmt.Errorf("Not Connected")
+var clientDefaultTimeout = (5 * time.Second)
+
 // MQTTClientConfig holds the essential elements needed to configure the MQTTClient
 type MQTTClientConfig struct {
 	Host              string
@@ -30,10 +34,13 @@ type MQTTClientConfig struct {
 
 // MQTTClient contains the essential elements that the MQTT client needs to function
 type MQTTClient struct {
-	Client         MQTT.Client
-	Values         *MQTTClientConfig
-	connected      bool
-	telemetryTopic string
+	Client                    MQTT.Client
+	Values                    *MQTTClientConfig
+	connected                 bool
+	telemetryPublishTopic     string
+	statePublishTopic         string
+	configSubscriptionTopic   string
+	commandsSubscriptionTopic string
 }
 
 func connectionLostHandler(client MQTT.Client, err error) {
@@ -76,7 +83,10 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 		connected: false,
 	}
 
-	mc.telemetryTopic = mc.formatMQTTTopicString("events")
+	mc.telemetryPublishTopic = mc.formatMQTTTopicString("events")
+	mc.statePublishTopic = mc.formatMQTTTopicString("state")
+	mc.configSubscriptionTopic = mc.formatMQTTTopicString("config")
+	mc.commandsSubscriptionTopic = mc.formatMQTTTopicString("commands/#")
 
 	return mc, nil
 }
@@ -86,7 +96,7 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 func (mc *MQTTClient) Connect() error {
 	log.Println("[MQTTClient] Connecting")
 	token := mc.Client.Connect()
-	okflag := token.WaitTimeout(6 * time.Second)
+	okflag := token.WaitTimeout(clientDefaultTimeout)
 	if !okflag {
 		return fmt.Errorf("Timeout waiting to connect")
 	}
@@ -118,38 +128,57 @@ func (mc *MQTTClient) IsConnected() bool {
 	return true
 }
 
-// ErrorNotConnected is raised when...
-var ErrorNotConnected = fmt.Errorf("Not Connected")
+func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler) error {
+	if mc == nil || !mc.connected {
+		return ErrorNotConnected
+	}
+	token := mc.Client.Subscribe(topic, Qos, handler)
+	okflag := token.WaitTimeout(clientDefaultTimeout)
+	if !okflag {
+		return fmt.Errorf("MQTT Subscribe timeout")
+	}
+	if token.Error() != nil {
+		return errors.Wrap(token.Error(), "MQTT Subscribe error")
+	}
+	return nil
+}
 
-// RegisterSubscriptionHandler subscribes to the Config topic, and assigns the
-// passed handler function to it.
-func (mc *MQTTClient) RegisterSubscriptionHandler(topic string, handler MQTT.MessageHandler) error {
+// RegisterConfigHandler registers the `handler` to the IOT cloud's device config topic
+func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
+	return mc.registerHandler(mc.configSubscriptionTopic, handler)
+}
+
+// RegisterCommandHandler registers the `handler` to the IOT cloud's device command topic
+func (mc *MQTTClient) RegisterCommandHandler(handler MQTT.MessageHandler) error {
+	return mc.registerHandler(mc.commandsSubscriptionTopic, handler)
+}
+
+func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	if mc == nil || !mc.connected {
 		return ErrorNotConnected
 	}
 
-	t := mc.formatMQTTTopicString(topic)
-	mc.Client.Subscribe(t, Qos, handler)
+	fmt.Printf("Publishing to Topic: %s\n", topic)
+	token := mc.Client.Publish(topic, Qos, false, payload)
+	okflag := token.WaitTimeout(clientDefaultTimeout)
+	if !okflag {
+		return fmt.Errorf("MQTT publishing timeout")
+	}
+	if token.Error() != nil {
+		return errors.Wrap(token.Error(), "MQTT publishing error")
+	}
 	return nil
 }
 
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
 func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
-	if mc == nil || !mc.connected {
-		return ErrorNotConnected
-	}
+	return mc.publish(mc.telemetryPublishTopic, payload)
+}
 
-	token := mc.Client.Publish(mc.telemetryTopic, Qos, false, payload)
-	okflag := token.WaitTimeout(5 * time.Second)
-	if !okflag {
-		return fmt.Errorf("Timeout publishing telemetry event")
-	}
-	if token.Error() != nil {
-		return errors.Wrap(token.Error(), "Error publishing telemetry event")
-	}
-
-	return nil
+// PublishState sends the payload to the MQTT broker's Config topic.
+func (mc *MQTTClient) PublishState(payload []byte) error {
+	return mc.publish(mc.statePublishTopic, payload)
 }
 
 func getMQTTClientID(cfg *MQTTClientConfig) string {
@@ -162,6 +191,10 @@ func getMQTTClientID(cfg *MQTTClientConfig) string {
 
 func (mc *MQTTClient) formatMQTTTopicString(topic string) string {
 	return fmt.Sprintf("/devices/%s/%s", mc.Values.DeviceID, topic)
+}
+
+func (mc *MQTTClient) formatMQTTPublishTopicString(topic string) string {
+	return fmt.Sprintf("/projects/%s/topics/%s", mc.Values.ProjectID, topic)
 }
 
 func getMQTTBrokerAddress(cfg *MQTTClientConfig) string {
