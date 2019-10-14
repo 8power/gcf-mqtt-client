@@ -69,6 +69,32 @@ func credentialsProvider() (username string, password string) {
 	return username, password
 }
 
+type CommandMessage struct {
+	Command   string   `json:"command"`
+	Arguments []string `json:"args,omitempty"`
+}
+
+func NewCommandMessage(msg []byte) (CommandMessage, error) {
+	cmd := CommandMessage{}
+	err := json.Unmarshal(msg, &cmd)
+	if err != nil {
+		return cmd, errors.Wrap(err, "Unmarshal error")
+	}
+	return cmd, nil
+}
+
+func TestCommandMessage(t *testing.T) {
+	cmd := CommandMessage{
+		Command: "reboot",
+	}
+
+	js, err := json.Marshal(&cmd)
+	if err != nil {
+		t.Fatalf("json Marshal error %v", err)
+	}
+	fmt.Printf("Command: %s\n", js)
+}
+
 func TestTelemetryClient(t *testing.T) {
 	cfg := &MQTTClientConfig{
 		Host:              Host,
@@ -104,7 +130,12 @@ func TestTelemetryClient(t *testing.T) {
 
 	err = mc.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[command handler] Payload: %v\n", msg.Payload())
+		cmd, err := NewCommandMessage(msg.Payload())
+		if err != nil {
+			fmt.Printf("NewCommandMessage error %v\n", err)
+			return
+		}
+		fmt.Printf("[command handler] CommandMessage: %v\n", cmd)
 	})
 	if err != nil {
 		t.Errorf("Error raised in RegisterCommandHandler: %v\n", err)
@@ -117,11 +148,21 @@ func TestTelemetryClient(t *testing.T) {
 		t.Errorf("Error raised in PublishConfig: %v\n", err)
 	}
 
-	var waitTime = 30
-	fmt.Printf("Now waiting for %d seconds, just to see what happens\n", waitTime)
+	var waitTime = 10 * time.Second
+	fmt.Printf("Now waiting for %f seconds, just to see what happens\n", waitTime.Seconds())
 	select {
-	case <-time.After(30 * time.Second):
+	case <-time.After(waitTime):
 		fmt.Println("Finito")
+	}
+
+	err = mc.RemoveCommandHandler()
+	if err != nil {
+		t.Errorf("RemoveCommandHandler Error: %v\n", err)
+	}
+
+	err = mc.RemoveConfigHandler()
+	if err != nil {
+		t.Errorf("RemoveConfigHandler Error: %v\n", err)
 	}
 
 	err = mc.Disconnect()
