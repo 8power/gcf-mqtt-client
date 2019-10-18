@@ -112,13 +112,16 @@ func TestTelemetryClient(t *testing.T) {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
 
+	isConnectionGood := mc.IsConnectionGood()
+	fmt.Printf("IsConnectionGood %t\n", isConnectionGood)
+
 	err = mc.Connect()
 	if err != nil {
 		t.Errorf("Error raised in Connect: %v\n", err)
 	}
 
-	isConnected := mc.IsConnected()
-	fmt.Printf("IsConnected returns %t\n", isConnected)
+	isConnectionGood = mc.IsConnectionGood()
+	fmt.Printf("IsConnectionGood %t\n", isConnectionGood)
 
 	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
@@ -148,12 +151,26 @@ func TestTelemetryClient(t *testing.T) {
 		t.Errorf("Error raised in PublishConfig: %v\n", err)
 	}
 
+	loop := true
+
+	isConnectionGood = mc.IsConnectionGood()
+	fmt.Printf("IsConnectionGood %t\n", isConnectionGood)
+
+	go func() {
+		for loop {
+			fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
 	var waitTime = 10 * time.Second
-	fmt.Printf("Now waiting for %f seconds, just to see what happens\n", waitTime.Seconds())
+	fmt.Printf("Now waiting for %f seconds, just to see what happens\n\n", waitTime.Seconds())
 	select {
 	case <-time.After(waitTime):
 		fmt.Println("Finito")
 	}
+
+	loop = false
 
 	err = mc.RemoveCommandHandler()
 	if err != nil {

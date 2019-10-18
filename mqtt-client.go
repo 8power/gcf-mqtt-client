@@ -39,7 +39,6 @@ type MQTTClientConfig struct {
 type MQTTClient struct {
 	Client                    MQTT.Client
 	Values                    *MQTTClientConfig
-	connected                 bool
 	telemetryPublishTopic     string
 	statePublishTopic         string
 	configSubscriptionTopic   string
@@ -51,7 +50,7 @@ func connectionLostHandler(client MQTT.Client, err error) {
 }
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient using
-// the passed MQTTClientValues and the default MessageHandler
+// the passed MQTTClientValues and the default MessageHandler , connectionLostHandler MQTT.MessageHandler
 func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider) (mc *MQTTClient, err error) {
 
 	certpool := x509.NewCertPool()
@@ -81,10 +80,8 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 	opts.SetDefaultPublishHandler(defaultHandler)
 
 	mc = &MQTTClient{
-		Client:    MQTT.NewClient(opts),
-		Values:    cfg,
-		connected: false,
-	}
+		Client: MQTT.NewClient(opts),
+		Values: cfg}
 
 	mc.telemetryPublishTopic = mc.formatMQTTTopicString("events")
 	mc.statePublishTopic = mc.formatMQTTTopicString("state")
@@ -111,32 +108,34 @@ func (mc *MQTTClient) Connect() error {
 	if err != nil {
 		return errors.Wrap(err, "MQTTClient Connect error")
 	}
-	mc.connected = true
 	return nil
 }
 
 // Disconnect from the MQTT client
 func (mc *MQTTClient) Disconnect() error {
-	if mc == nil || !mc.connected {
+	if mc == nil || !mc.isConnectionGood() {
 		return ErrorNotConnected
 	}
 
 	log.Println("[MQTTClient] Disconnecting")
 	mc.Client.Disconnect(250)
-	mc.connected = false
 	return nil
 }
 
-// IsConnected returns true if connected
-func (mc *MQTTClient) IsConnected() bool {
-	if mc == nil || !mc.connected {
+func (mc *MQTTClient) isConnectionGood() bool {
+	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
+}
+
+// IsConnectionGood returns true if connection open and connected
+func (mc *MQTTClient) IsConnectionGood() bool {
+	if mc == nil {
 		return false
 	}
-	return true
+	return mc.isConnectionGood()
 }
 
 func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler) error {
-	if mc == nil || !mc.connected {
+	if mc == nil || !mc.isConnectionGood() {
 		return ErrorNotConnected
 	}
 	return tokenChecker(mc.Client.Subscribe(topic, Qos, handler))
@@ -163,7 +162,7 @@ func (mc *MQTTClient) RemoveCommandHandler() error {
 }
 
 func (mc *MQTTClient) publish(topic string, payload []byte) error {
-	if mc == nil || !mc.connected {
+	if mc == nil || !mc.isConnectionGood() {
 		return ErrorNotConnected
 	}
 	return tokenChecker(mc.Client.Publish(topic, Qos, false, payload))
