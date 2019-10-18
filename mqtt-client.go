@@ -46,6 +46,7 @@ type MQTTClient struct {
 }
 
 func connectionLostHandler(client MQTT.Client, err error) {
+	client.Disconnect(50)
 	fmt.Printf("[connectionLostHandler] invoked with error %v\n", err)
 }
 
