@@ -47,7 +47,7 @@ type MQTTClient struct {
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient using
 // the passed MQTTClientValues and the default MessageHandler , connectionLostHandler MQTT.MessageHandler
-func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider, connectionLostCallback MQTT.ConnectionLostHandler) (mc *MQTTClient, err error) {
+func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider, connectionLostHandler MQTT.ConnectionLostHandler) (mc *MQTTClient, err error) {
 
 	certpool := x509.NewCertPool()
 	pemCerts, err := ioutil.ReadFile(cfg.RootCertFile)
