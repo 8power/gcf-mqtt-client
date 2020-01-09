@@ -28,7 +28,7 @@ const (
 	ProjectID         = "skillful-mason-244208"
 	CloudRegion       = "europe-west1"
 	RegistryID        = "vibration-energy-harvesting-registry"
-	DeviceID          = "dell-development-laptop"
+	DeviceID          = "pc-rob-desktop"
 )
 
 func testHander(client MQTT.Client, msg MQTT.Message) {
@@ -51,7 +51,7 @@ func createJWT(projectID string, privateKeyFile string) (string, error) {
 	ts := time.Now().Unix()
 	claims := &jwtGo.StandardClaims{
 		IssuedAt:  ts,
-		ExpiresAt: ts + 1200,
+		ExpiresAt: ts + 20,
 		Audience:  projectID,
 	}
 
@@ -67,6 +67,11 @@ func credentialsProvider() (username string, password string) {
 		fmt.Printf("[credentialsProvider] Error creating JWT %v\n", err)
 	}
 	return username, password
+}
+
+func connectionLostHandler(client MQTT.Client, err error) {
+	client.Disconnect(50)
+	fmt.Printf("[connectionLostHandler] invoked with error %v\n", err)
 }
 
 type CommandMessage struct {
@@ -107,7 +112,7 @@ func TestTelemetryClient(t *testing.T) {
 		DeviceID:          DeviceID,
 	}
 
-	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider)
+	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider, connectionLostHandler)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
@@ -200,7 +205,7 @@ func TestClient(t *testing.T) {
 		DeviceID:          DeviceID,
 	}
 
-	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider)
+	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider, connectionLostHandler)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
@@ -238,9 +243,9 @@ func TestClient(t *testing.T) {
 	}
 	publishMessages(obj, t, mc, 0, 10)
 
-	fmt.Println("Now waiting for 30 seconds for JWT to expire")
+	fmt.Println("Now waiting for 5 minutes for JWT to expire")
 	select {
-	case <-time.After(30 * time.Second):
+	case <-time.After(5 * time.Minute):
 		fmt.Println("Times up, should have needed a new JWT by now")
 	}
 
