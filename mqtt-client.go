@@ -263,7 +263,7 @@ func (mc *MQTTClient) RemoveCommandHandler() error {
 	return tokenChecker(mc.Client.Unsubscribe(mc.topics.commandsSubscriptionTopic))
 }
 
-func (mc *MQTTClient) publish(topic string, payload []byte) {
+func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	msg := Message{
 		Topic:   topic,
 		Payload: []byte{},
@@ -271,20 +271,32 @@ func (mc *MQTTClient) publish(topic string, payload []byte) {
 	// append(a[:0], src...) is a safe copy
 	msg.Payload = append(msg.Payload[:0], payload...)
 
-	mc.messageQueue.QueueMessage(msg)
+	err := mc.messageQueue.QueueMessage(msg)
+	if err != nil {
+		return errors.Wrap(err, "QueueMessage error")
+	}
 	fmt.Printf("Message queue size %d\n", mc.messageQueue.QueueSize())
 	mc.dataAvailable <- true
+	return nil
 }
 
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
-func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) {
-	mc.publish(mc.topics.telemetryPublishTopic, payload)
+func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
+	err := mc.publish(mc.topics.telemetryPublishTopic, payload)
+	if err != nil {
+		return errors.Wrap(err, "publish error")
+	}
+	return nil
 }
 
 // PublishState sends the payload to the MQTT broker's Config topic.
-func (mc *MQTTClient) PublishState(payload []byte) {
-	mc.publish(mc.topics.statePublishTopic, payload)
+func (mc *MQTTClient) PublishState(payload []byte) error {
+	err := mc.publish(mc.topics.statePublishTopic, payload)
+	if err != nil {
+		return errors.Wrap(err, "publish error")
+	}
+	return nil
 }
 
 func getMQTTClientID(cfg MQTTClientConfig) string {

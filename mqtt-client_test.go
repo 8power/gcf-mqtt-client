@@ -285,7 +285,10 @@ func publishMessages(obj *TestMessage, t *testing.T, mc *MQTTClient, start int, 
 		if err != nil {
 			t.Errorf("JSON Marshal error %v", err)
 		} else {
-			mc.PublishTelemetryEvent(payload)
+			err = mc.PublishTelemetryEvent(payload)
+			if err != nil {
+				t.Errorf("PublishTelemetryEvent error %v", err)
+			}
 			time.Sleep(1 * time.Second)
 		}
 	}
