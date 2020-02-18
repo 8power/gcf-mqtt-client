@@ -95,23 +95,28 @@ func NewMQTTClient(ctx context.Context, cfg MQTTClientConfig, defaultHandler MQT
 	opts.SetCredentialsProvider(credentialsProvider)
 	opts.SetDefaultPublishHandler(defaultHandler)
 
-	if cfg.RetryAttempts == 0 {
-		cfg.RetryAttempts = 3
+	if cfg.ReconnectRetryAttempts == 0 {
+		cfg.ReconnectRetryAttempts = 3
 	}
 
-	if cfg.RetryTimeout == 0 {
-		cfg.RetryTimeout = 5 * time.Second
+	if cfg.ReconnectRetryTimeout == 0 {
+		cfg.ReconnectRetryTimeout = 5 * time.Second
 	}
 
 	if cfg.CommunicationAttempts == 0 {
 		cfg.CommunicationAttempts = 3
 	}
 
+	mq, err := NewMessageQueue("mqtt-queue")
+	if err != nil {
+		return nil, errors.Wrap(err, "NewMessageQueue")
+	}
+
 	mc := &MQTTClient{
 		Client:                MQTT.NewClient(opts),
 		Config:                cfg,
 		context:               ctx,
-		messageQueue:          NewMessageQueue(),
+		messageQueue:          mq,
 		dataAvailable:         make(chan bool),
 		communicationAttempts: 0,
 	}
@@ -158,11 +163,14 @@ func (mc *MQTTClient) publishAllAvailable() {
 			}
 
 			for {
-				dst, ok := mc.messageQueue.FirstMessage()
+				dst, ok, err := mc.messageQueue.FirstMessage()
 				if !ok {
+					if err != nil {
+						return errors.Wrap(err, "FirstMessage error")
+					}
 					return nil
 				}
-				err := tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
+				err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
 				if err != nil {
 					log.Println("Error publishing queued message")
 					return errors.Wrapf(err, "Publish error")
@@ -170,8 +178,8 @@ func (mc *MQTTClient) publishAllAvailable() {
 				mc.messageQueue.RemoveFirstMessage()
 			}
 		},
-		retry.Attempts(mc.Config.RetryAttempts),
-		retry.Delay(mc.Config.RetryTimeout),
+		retry.Attempts(mc.Config.ReconnectRetryAttempts),
+		retry.Delay(mc.Config.ReconnectRetryTimeout),
 		retry.OnRetry(func(u uint, err error) {
 			log.Printf("### [RetryFunction] instance number: %d. Error: %v", u, err)
 		}),

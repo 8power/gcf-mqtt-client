@@ -98,17 +98,17 @@ func TestCommandMessage(t *testing.T) {
 
 func TestTelemetryClient(t *testing.T) {
 	cfg := MQTTClientConfig{
-		Host:                  Host,
-		Port:                  Port,
-		RootCertFile:          RootCertFile,
-		PrivateKeyPEMFile:     PrivateKeyPEMFile,
-		ProjectID:             ProjectID,
-		CloudRegion:           CloudRegion,
-		RegistryID:            RegistryID,
-		DeviceID:              DeviceID,
-		RetryAttempts:         5,
-		RetryTimeout:          5 * time.Second,
-		CommunicationAttempts: 5,
+		Host:                   Host,
+		Port:                   Port,
+		RootCertFile:           RootCertFile,
+		PrivateKeyPEMFile:      PrivateKeyPEMFile,
+		ProjectID:              ProjectID,
+		CloudRegion:            CloudRegion,
+		RegistryID:             RegistryID,
+		DeviceID:               DeviceID,
+		ReconnectRetryAttempts: 5,
+		ReconnectRetryTimeout:  5 * time.Second,
+		CommunicationAttempts:  5,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -194,17 +194,17 @@ func TestTelemetryClient(t *testing.T) {
 
 func TestClient(t *testing.T) {
 	cfg := MQTTClientConfig{
-		Host:                  Host,
-		Port:                  Port,
-		RootCertFile:          RootCertFile,
-		PrivateKeyPEMFile:     PrivateKeyPEMFile,
-		ProjectID:             ProjectID,
-		CloudRegion:           CloudRegion,
-		RegistryID:            RegistryID,
-		DeviceID:              DeviceID,
-		RetryAttempts:         5,
-		RetryTimeout:          5 * time.Second,
-		CommunicationAttempts: 5,
+		Host:                   Host,
+		Port:                   Port,
+		RootCertFile:           RootCertFile,
+		PrivateKeyPEMFile:      PrivateKeyPEMFile,
+		ProjectID:              ProjectID,
+		CloudRegion:            CloudRegion,
+		RegistryID:             RegistryID,
+		DeviceID:               DeviceID,
+		ReconnectRetryAttempts: 5,
+		ReconnectRetryTimeout:  5 * time.Second,
+		CommunicationAttempts:  5,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -225,9 +225,6 @@ func TestClient(t *testing.T) {
 	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
-
-		//reply := fmt.Sprintf("%s reply", msg.Payload())
-		//mc.PublishState([]byte(reply))
 	})
 	if err != nil {
 		t.Errorf("Error raised in RegisterConfigHandler: %v\n", err)
