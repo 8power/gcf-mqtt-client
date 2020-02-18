@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"golang.org/x/net/context"
 
+	retry "github.com/avast/retry-go"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
 // Qos is the default MQTT Quality of Service
-const Qos = 0
+const Qos = 1
 
 // ErrorNotConnected is raised when...
 var ErrorNotConnected = fmt.Errorf("Not Connected")
@@ -25,30 +27,48 @@ var clientDefaultTimeout = (5 * time.Second)
 
 // MQTTClientConfig holds the essential elements needed to configure the MQTTClient
 type MQTTClientConfig struct {
-	Host              string
-	Port              string
-	RootCertFile      string
-	PrivateKeyPEMFile string
-	ProjectID         string
-	CloudRegion       string
-	RegistryID        string
-	DeviceID          string
+	Host                   string
+	Port                   string
+	RootCertFile           string
+	PrivateKeyPEMFile      string
+	ProjectID              string
+	CloudRegion            string
+	RegistryID             string
+	DeviceID               string
+	ReconnectRetryAttempts uint
+	ReconnectRetryTimeout  time.Duration
+	CommunicationAttempts  int
 }
 
-// MQTTClient contains the essential elements that the MQTT client needs to function
-type MQTTClient struct {
-	Client                    MQTT.Client
-	Values                    *MQTTClientConfig
+// MQTTTopics hold all the Topic names used by the client
+type MQTTTopics struct {
 	telemetryPublishTopic     string
 	statePublishTopic         string
 	configSubscriptionTopic   string
 	commandsSubscriptionTopic string
 }
 
-// NewMQTTClient intialises and returns a new instance of a MQTTClient using
-// the passed MQTTClientValues and the default MessageHandler , connectionLostHandler MQTT.MessageHandler
-func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider, connectionLostHandler MQTT.ConnectionLostHandler) (mc *MQTTClient, err error) {
+// MQTTClient contains the essential elements that the MQTT client needs to function
+type MQTTClient struct {
+	Client                MQTT.Client
+	Config                MQTTClientConfig
+	messageQueue          *MessageQueue
+	topics                MQTTTopics
+	context               context.Context
+	dataAvailable         chan bool
+	communicationAttempts int
+}
 
+func connectionLostHandler(client MQTT.Client, err error) {
+	connection := client.IsConnected() && client.IsConnectionOpen()
+	fmt.Printf("Connection %t\n", connection)
+	client.Disconnect(100)
+	connection = client.IsConnected() && client.IsConnectionOpen()
+	fmt.Printf("Connection %t\n", connection)
+}
+
+// NewMQTTClient intialises and returns a new instance of a MQTTClient.
+func NewMQTTClient(ctx context.Context, cfg MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider) (*MQTTClient, error) {
 	certpool := x509.NewCertPool()
 	pemCerts, err := ioutil.ReadFile(cfg.RootCertFile)
 	if err != nil {
@@ -75,15 +95,92 @@ func NewMQTTClient(cfg *MQTTClientConfig, defaultHandler MQTT.MessageHandler, cr
 	opts.SetCredentialsProvider(credentialsProvider)
 	opts.SetDefaultPublishHandler(defaultHandler)
 
-	mc = &MQTTClient{
-		Client: MQTT.NewClient(opts),
-		Values: cfg}
+	if cfg.RetryAttempts == 0 {
+		cfg.RetryAttempts = 3
+	}
 
-	mc.telemetryPublishTopic = mc.formatMQTTTopicString("events")
-	mc.statePublishTopic = mc.formatMQTTTopicString("state")
-	mc.configSubscriptionTopic = mc.formatMQTTTopicString("config")
-	mc.commandsSubscriptionTopic = mc.formatMQTTTopicString("commands/#")
+	if cfg.RetryTimeout == 0 {
+		cfg.RetryTimeout = 5 * time.Second
+	}
+
+	if cfg.CommunicationAttempts == 0 {
+		cfg.CommunicationAttempts = 3
+	}
+
+	mc := &MQTTClient{
+		Client:                MQTT.NewClient(opts),
+		Config:                cfg,
+		context:               ctx,
+		messageQueue:          NewMessageQueue(),
+		dataAvailable:         make(chan bool),
+		communicationAttempts: 0,
+	}
+
+	mc.topics = MQTTTopics{
+		telemetryPublishTopic:     mc.formatMQTTTopicString("events"),
+		statePublishTopic:         mc.formatMQTTTopicString("state"),
+		configSubscriptionTopic:   mc.formatMQTTTopicString("config"),
+		commandsSubscriptionTopic: mc.formatMQTTTopicString("commands/#"),
+	}
+
+	go mc.publishHandler()
+
 	return mc, nil
+}
+
+func (mc *MQTTClient) publishHandler() {
+	log.Println("[publishHandler] starting loop")
+	for {
+		select {
+		case <-mc.context.Done():
+			fmt.Println("[publishHandler] exiting loop")
+			return
+		case <-mc.dataAvailable:
+			mc.publishAllAvailable()
+		}
+	}
+}
+
+func (mc *MQTTClient) publishAllAvailable() {
+	log.Println("[publishAllAvailable] starting")
+	err := retry.Do(
+		func() error {
+			if !mc.isConnectionGood() {
+				err := mc.Connect()
+				if err != nil {
+					log.Printf("[publishAllAvailable] Error: %v\n", err)
+					return ErrorNotConnected
+				}
+				if !mc.isConnectionGood() {
+					log.Println("[publishAllAvailable] NOT CONNECTED")
+					return ErrorNotConnected
+				}
+			}
+
+			for {
+				dst, ok := mc.messageQueue.FirstMessage()
+				if !ok {
+					return nil
+				}
+				err := tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
+				if err != nil {
+					log.Println("Error publishing queued message")
+					return errors.Wrapf(err, "Publish error")
+				}
+				mc.messageQueue.RemoveFirstMessage()
+			}
+		},
+		retry.Attempts(mc.Config.RetryAttempts),
+		retry.Delay(mc.Config.RetryTimeout),
+		retry.OnRetry(func(u uint, err error) {
+			log.Printf("### [RetryFunction] instance number: %d. Error: %v", u, err)
+		}),
+	)
+	if err != nil {
+		mc.communicationAttempts++
+	} else {
+		mc.communicationAttempts = 0
+	}
 }
 
 func tokenChecker(token MQTT.Token) error {
@@ -119,6 +216,7 @@ func (mc *MQTTClient) Disconnect() error {
 }
 
 func (mc *MQTTClient) isConnectionGood() bool {
+	fmt.Printf("[isConnectionGood] IsConnected: %t IsConnectionOpen: %t", mc.Client.IsConnected(), mc.Client.IsConnectionOpen())
 	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
 }
 
@@ -127,7 +225,7 @@ func (mc *MQTTClient) IsConnectionGood() bool {
 	if mc == nil {
 		return false
 	}
-	return mc.isConnectionGood()
+	return mc.Config.CommunicationAttempts < mc.communicationAttempts
 }
 
 func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler) error {
@@ -139,43 +237,49 @@ func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler)
 
 // RegisterConfigHandler registers the `handler` to the IOT cloud's device config topic
 func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
-	return mc.registerHandler(mc.configSubscriptionTopic, handler)
+	return mc.registerHandler(mc.topics.configSubscriptionTopic, handler)
 }
 
 // RemoveConfigHandler removes the subscription for the Config topic and handler
 func (mc *MQTTClient) RemoveConfigHandler() error {
-	return tokenChecker(mc.Client.Unsubscribe(mc.configSubscriptionTopic))
+	return tokenChecker(mc.Client.Unsubscribe(mc.topics.configSubscriptionTopic))
 }
 
 // RegisterCommandHandler registers the `handler` to the IOT cloud's device command topic
 func (mc *MQTTClient) RegisterCommandHandler(handler MQTT.MessageHandler) error {
-	return mc.registerHandler(mc.commandsSubscriptionTopic, handler)
+	return mc.registerHandler(mc.topics.commandsSubscriptionTopic, handler)
 }
 
 // RemoveCommandHandler removes the subscription for the Command topic and handler
 func (mc *MQTTClient) RemoveCommandHandler() error {
-	return tokenChecker(mc.Client.Unsubscribe(mc.commandsSubscriptionTopic))
+	return tokenChecker(mc.Client.Unsubscribe(mc.topics.commandsSubscriptionTopic))
 }
 
-func (mc *MQTTClient) publish(topic string, payload []byte) error {
-	if mc == nil || !mc.isConnectionGood() {
-		return ErrorNotConnected
+func (mc *MQTTClient) publish(topic string, payload []byte) {
+	msg := Message{
+		Topic:   topic,
+		Payload: []byte{},
 	}
-	return tokenChecker(mc.Client.Publish(topic, Qos, false, payload))
+	// append(a[:0], src...) is a safe copy
+	msg.Payload = append(msg.Payload[:0], payload...)
+
+	mc.messageQueue.QueueMessage(msg)
+	fmt.Printf("Message queue size %d\n", mc.messageQueue.QueueSize())
+	mc.dataAvailable <- true
 }
 
 // PublishTelemetryEvent sends the payload to the MQTT broker, if it doesnt
 // work we get an error.
-func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) error {
-	return mc.publish(mc.telemetryPublishTopic, payload)
+func (mc *MQTTClient) PublishTelemetryEvent(payload []byte) {
+	mc.publish(mc.topics.telemetryPublishTopic, payload)
 }
 
 // PublishState sends the payload to the MQTT broker's Config topic.
-func (mc *MQTTClient) PublishState(payload []byte) error {
-	return mc.publish(mc.statePublishTopic, payload)
+func (mc *MQTTClient) PublishState(payload []byte) {
+	mc.publish(mc.topics.statePublishTopic, payload)
 }
 
-func getMQTTClientID(cfg *MQTTClientConfig) string {
+func getMQTTClientID(cfg MQTTClientConfig) string {
 	return fmt.Sprintf("projects/%s/locations/%s/registries/%s/devices/%s",
 		cfg.ProjectID,
 		cfg.CloudRegion,
@@ -184,14 +288,14 @@ func getMQTTClientID(cfg *MQTTClientConfig) string {
 }
 
 func (mc *MQTTClient) formatMQTTTopicString(topic string) string {
-	return fmt.Sprintf("/devices/%s/%s", mc.Values.DeviceID, topic)
+	return fmt.Sprintf("/devices/%s/%s", mc.Config.DeviceID, topic)
 }
 
 func (mc *MQTTClient) formatMQTTPublishTopicString(topic string) string {
-	return fmt.Sprintf("/projects/%s/topics/%s", mc.Values.ProjectID, topic)
+	return fmt.Sprintf("/projects/%s/topics/%s", mc.Config.ProjectID, topic)
 }
 
-func getMQTTBrokerAddress(cfg *MQTTClientConfig) string {
+func getMQTTBrokerAddress(cfg MQTTClientConfig) string {
 	brokerAddress := fmt.Sprintf("ssl://%s:%s", cfg.Host, cfg.Port)
 	log.Printf("[MQTTClient] getMQTTBrokerAddress %s", brokerAddress)
 	return brokerAddress

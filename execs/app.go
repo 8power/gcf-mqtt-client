@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	mq "github.com/8power/gcf-mqtt-client"
@@ -12,16 +13,23 @@ import (
 	"github.com/pkg/errors"
 )
 
+var RootCertFile string
+var PrivateKeyPEMFile string
+
 const (
-	Host              = "mqtt.googleapis.com"
-	Port              = "8883"
-	RootCertFile      = "/home/admin/.certs/roots.pem"
-	PrivateKeyPEMFile = "/home/admin/.certs/iot_rsa_private.pem"
-	ProjectID         = "skillful-mason-244208"
-	CloudRegion       = "europe-west1"
-	RegistryID        = "vibration-energy-harvesting-registry"
-	DeviceID          = "Gateway-F359P42"
+	Host        = "mqtt.googleapis.com"
+	Port        = "8883"
+	ProjectID   = "skillful-mason-244208"
+	CloudRegion = "europe-west1"
+	RegistryID  = "vibration-energy-harvesting-registry"
+	DeviceID    = "Gateway-F359P42"
 )
+
+func init() {
+	home := os.Getenv("HOME")
+	RootCertFile = fmt.Sprintf("%s/.certs/roots.pem", home)
+	PrivateKeyPEMFile = fmt.Sprintf("%s/.certs/iot_rsa_private.pem", home)
+}
 
 func main() {
 	cfg := &mq.MQTTClientConfig{
