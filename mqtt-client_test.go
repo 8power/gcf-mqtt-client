@@ -1,6 +1,7 @@
 package mqttclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -69,11 +70,6 @@ func credentialsProvider() (username string, password string) {
 	return username, password
 }
 
-func connectionLostHandler(client MQTT.Client, err error) {
-	client.Disconnect(50)
-	fmt.Printf("[connectionLostHandler] invoked with error %v\n", err)
-}
-
 type CommandMessage struct {
 	Command   string   `json:"command"`
 	Arguments []string `json:"args,omitempty"`
@@ -101,18 +97,24 @@ func TestCommandMessage(t *testing.T) {
 }
 
 func TestTelemetryClient(t *testing.T) {
-	cfg := &MQTTClientConfig{
-		Host:              Host,
-		Port:              Port,
-		RootCertFile:      RootCertFile,
-		PrivateKeyPEMFile: PrivateKeyPEMFile,
-		ProjectID:         ProjectID,
-		CloudRegion:       CloudRegion,
-		RegistryID:        RegistryID,
-		DeviceID:          DeviceID,
+	cfg := MQTTClientConfig{
+		Host:                   Host,
+		Port:                   Port,
+		RootCertFile:           RootCertFile,
+		PrivateKeyPEMFile:      PrivateKeyPEMFile,
+		ProjectID:              ProjectID,
+		CloudRegion:            CloudRegion,
+		RegistryID:             RegistryID,
+		DeviceID:               DeviceID,
+		ReconnectRetryAttempts: 5,
+		ReconnectRetryTimeout:  5 * time.Second,
+		CommunicationAttempts:  5,
 	}
 
-	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider, connectionLostHandler)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mc, err := NewMQTTClient(ctx, cfg, testHander, credentialsProvider)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
@@ -151,10 +153,7 @@ func TestTelemetryClient(t *testing.T) {
 
 	fmt.Println("Publishing a config type of thing")
 	publishConfig := `{"config": "test here, there, there, and everywhere"}`
-	err = mc.PublishState([]byte(publishConfig))
-	if err != nil {
-		t.Errorf("Error raised in PublishConfig: %v\n", err)
-	}
+	mc.PublishState([]byte(publishConfig))
 
 	loop := true
 
@@ -194,18 +193,24 @@ func TestTelemetryClient(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	cfg := &MQTTClientConfig{
-		Host:              Host,
-		Port:              Port,
-		RootCertFile:      RootCertFile,
-		PrivateKeyPEMFile: PrivateKeyPEMFile,
-		ProjectID:         ProjectID,
-		CloudRegion:       CloudRegion,
-		RegistryID:        RegistryID,
-		DeviceID:          DeviceID,
+	cfg := MQTTClientConfig{
+		Host:                   Host,
+		Port:                   Port,
+		RootCertFile:           RootCertFile,
+		PrivateKeyPEMFile:      PrivateKeyPEMFile,
+		ProjectID:              ProjectID,
+		CloudRegion:            CloudRegion,
+		RegistryID:             RegistryID,
+		DeviceID:               DeviceID,
+		ReconnectRetryAttempts: 5,
+		ReconnectRetryTimeout:  5 * time.Second,
+		CommunicationAttempts:  5,
 	}
 
-	mc, err := NewMQTTClient(cfg, testHander, credentialsProvider, connectionLostHandler)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mc, err := NewMQTTClient(ctx, cfg, testHander, credentialsProvider)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
@@ -220,9 +225,6 @@ func TestClient(t *testing.T) {
 	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
 		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
 		fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
-
-		reply := fmt.Sprintf("%s reply", msg.Payload())
-		mc.PublishState([]byte(reply))
 	})
 	if err != nil {
 		t.Errorf("Error raised in RegisterConfigHandler: %v\n", err)
@@ -241,12 +243,23 @@ func TestClient(t *testing.T) {
 		SequenceNumber: 1,
 		Timestamp:      int(time.Now().Unix()),
 	}
-	publishMessages(obj, t, mc, 0, 10)
+	publishMessages(obj, t, mc, 0, 0)
 
-	fmt.Println("Now waiting for 5 minutes for JWT to expire")
-	select {
-	case <-time.After(5 * time.Minute):
-		fmt.Println("Times up, should have needed a new JWT by now")
+	fmt.Println("Now waiting for 5 minutes for JWT to expire, with 5 second messages")
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Minute)
+
+	i := 1
+	for {
+		select {
+		case <-time.After(5 * time.Second):
+			publishMessages(obj, t, mc, i, i)
+			i++
+			continue
+		case <-ctx2.Done():
+			cancel2()
+			fmt.Println("halted operation2")
+			break
+		}
 	}
 
 	publishMessages(obj, t, mc, 10, 10)
@@ -259,14 +272,7 @@ func TestClient(t *testing.T) {
 	if err != nil {
 		t.Errorf("JSON Marshal error %v", err)
 	} else {
-		err = mc.PublishTelemetryEvent(payload)
-		if err == nil {
-			t.Errorf("should not allow publishing of messages")
-		}
-
-		if err != ErrorNotConnected {
-			t.Errorf("error should be NotConnected not %v", err)
-		}
+		mc.PublishTelemetryEvent(payload)
 	}
 }
 
@@ -279,11 +285,7 @@ func publishMessages(obj *TestMessage, t *testing.T, mc *MQTTClient, start int, 
 		if err != nil {
 			t.Errorf("JSON Marshal error %v", err)
 		} else {
-			err = mc.PublishTelemetryEvent(payload)
-			if err != nil {
-				t.Errorf("Error Publishing payload %v", err)
-				return
-			}
+			mc.PublishTelemetryEvent(payload)
 			time.Sleep(1 * time.Second)
 		}
 	}
