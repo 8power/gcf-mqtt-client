@@ -149,11 +149,9 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 }
 
 func (mc *MQTTClient) publishHandler() {
-	log.Println("[publishHandler] starting loop")
 	for {
 		select {
 		case <-mc.context.Done():
-			fmt.Println("[publishHandler] exiting loop")
 			return
 		case <-mc.dataAvailable:
 			mc.publishAllAvailable()
@@ -169,17 +167,14 @@ func (mc *MQTTClient) isConnected() bool {
 }
 
 func (mc *MQTTClient) publishAllAvailable() {
-	log.Println("[publishAllAvailable] starting")
 	err := retry.Do(
 		func() error {
 			if !mc.isConnected() {
 				err := mc.Connect()
 				if err != nil {
-					log.Printf("[publishAllAvailable] Error: %v\n", err)
 					return ErrorNotConnected
 				}
 				if !mc.isConnected() {
-					log.Println("[publishAllAvailable] NOT CONNECTED")
 					return ErrorNotConnected
 				}
 			}
@@ -194,7 +189,6 @@ func (mc *MQTTClient) publishAllAvailable() {
 				}
 				err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
 				if err != nil {
-					log.Println("Error publishing queued message")
 					return errors.Wrapf(err, "Publish error")
 				}
 				mc.messageQueue.RemoveFirstMessage()
@@ -211,7 +205,6 @@ func (mc *MQTTClient) publishAllAvailable() {
 	} else {
 		mc.communicationAttempts = 0
 	}
-	log.Println("[publishAllAvailable] complete")
 }
 
 func tokenChecker(token MQTT.Token) error {
@@ -233,9 +226,6 @@ func (mc *MQTTClient) Connect() error {
 	if mc == nil {
 		return ErrorNotConnected
 	}
-
-	log.Printf("[Connect] starting")
-	defer log.Printf("[Connect] complete")
 
 	err := tokenChecker(mc.Client.Connect())
 	if err != nil {
@@ -266,22 +256,17 @@ func (mc *MQTTClient) Disconnect() error {
 	if mc == nil || !mc.isConnected() {
 		return ErrorNotConnected
 	}
-
-	log.Println("[Disconnect] starting")
 	mc.Client.Disconnect(250)
-	log.Println("[Disconnect] complete")
 	return nil
 }
 
 // IsConnectionGood returns true if connection open and connected
 func (mc *MQTTClient) IsConnectionGood() bool {
 	if mc == nil {
-		log.Println("[IsConnectionGood] mc == nil")
 		return false
 	}
 
 	if !mc.isConnected() {
-		log.Println("[IsConnectionGood] isConnected false")
 		return false
 	}
 
@@ -369,6 +354,5 @@ func (mc *MQTTClient) formatMQTTPublishTopicString(topic string) string {
 
 func getMQTTBrokerAddress(cfg ClientConfig) string {
 	brokerAddress := fmt.Sprintf("ssl://%s:%s", cfg.Host, cfg.Port)
-	log.Printf("[MQTTClient] getMQTTBrokerAddress %s", brokerAddress)
 	return brokerAddress
 }

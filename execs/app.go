@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -25,25 +26,53 @@ const (
 	DeviceID    = "Gateway-F359P42"
 )
 
-func init() {
+func GetClientConfig() mq.ClientConfig {
 	home := os.Getenv("HOME")
-	RootCertFile = fmt.Sprintf("%s/.certs/roots.pem", home)
-	PrivateKeyPEMFile = fmt.Sprintf("%s/.certs/iot_rsa_private.pem", home)
+	return mq.ClientConfig{
+		Host:                   Host,
+		Port:                   Port,
+		RootCertFile:           fmt.Sprintf("%s/.certs/roots.pem", home),
+		PrivateKeyPEMFile:      fmt.Sprintf("%s/.certs/iot_rsa_private.pem", home),
+		ProjectID:              ProjectID,
+		CloudRegion:            CloudRegion,
+		RegistryID:             RegistryID,
+		DeviceID:               DeviceID,
+		ReconnectRetryAttempts: 5,
+		ReconnectRetryTimeout:  5 * time.Second,
+		CommunicationAttempts:  5,
+	}
 }
 
 func main() {
-	cfg := &mq.MQTTClientConfig{
-		Host:              Host,
-		Port:              Port,
-		RootCertFile:      RootCertFile,
-		PrivateKeyPEMFile: PrivateKeyPEMFile,
-		ProjectID:         ProjectID,
-		CloudRegion:       CloudRegion,
-		RegistryID:        RegistryID,
-		DeviceID:          DeviceID,
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	spec := mq.NewMQTTClientConfig{
+		Context:              ctx,
+		ClientConfig:         GetClientConfig(),
+		DefaultMessageHander: testHander,
+		CredentialsProvider:  credentialsProvider,
+		OnConnectFunc: func(c *mq.MQTTClient) error {
+			err := c.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+				fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
+				fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
+			})
+			if err != nil {
+				return errors.Wrap(err, "RegisterConfigHandler error")
+			}
+
+			err = c.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
+				fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
+				fmt.Printf("[command handler] Payload: %s\n", msg.Payload())
+			})
+			if err != nil {
+				return errors.Wrap(err, "RegisterCommandHandler error")
+			}
+			return nil
+		},
 	}
 
-	mc, err := mq.NewMQTTClient(cfg, testHander, credentialsProvider)
+	mc, err := mq.NewMQTTClient(spec)
 	if err != nil {
 		log.Fatalf("Error raised in NewMQTTClient: %v\n", err)
 	}
@@ -54,14 +83,6 @@ func main() {
 		log.Fatalf("Connect error: %v\n", err)
 	}
 
-	fmt.Printf("\nRegisterSubscriptionHandler\n")
-	err = mc.RegisterSubscriptionHandler("config", func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[config handler] Payload: %v\n", msg.Payload())
-	})
-	if err != nil {
-		log.Fatalf("RegisterSubscriptionHandler error: %v\n", err)
-	}
 }
 
 // CreateJWT uses the projectId and privateKeyFile to make a Java Web Token (JWT)
