@@ -74,11 +74,7 @@ type NewMQTTClientConfig struct {
 
 func connectionLostHandler(client MQTT.Client, err error) {
 	fmt.Printf("[connectionLostHandler] starting")
-	connection := client.IsConnected() && client.IsConnectionOpen()
-	fmt.Printf("Connection %t\n", connection)
 	client.Disconnect(100)
-	connection = client.IsConnected() && client.IsConnectionOpen()
-	fmt.Printf("Connection %t\n", connection)
 }
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient.
@@ -312,7 +308,6 @@ func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	if err != nil {
 		return errors.Wrap(err, "QueueMessage error")
 	}
-	fmt.Printf("Message queue size %d\n", mc.messageQueue.QueueSize())
 	mc.dataAvailable <- true
 	return nil
 }
