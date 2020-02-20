@@ -96,8 +96,8 @@ func TestCommandMessage(t *testing.T) {
 	fmt.Printf("Command: %s\n", js)
 }
 
-func TestTelemetryClient(t *testing.T) {
-	cfg := MQTTClientConfig{
+func GetClientConfig() ClientConfig {
+	return ClientConfig{
 		Host:                   Host,
 		Port:                   Port,
 		RootCertFile:           RootCertFile,
@@ -110,46 +110,55 @@ func TestTelemetryClient(t *testing.T) {
 		ReconnectRetryTimeout:  5 * time.Second,
 		CommunicationAttempts:  5,
 	}
+}
 
+func TestTelemetryClient(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mc, err := NewMQTTClient(ctx, cfg, testHander, credentialsProvider)
+	spec := NewMQTTClientConfig{
+		Context:              ctx,
+		ClientConfig:         GetClientConfig(),
+		DefaultMessageHander: testHander,
+		CredentialsProvider:  credentialsProvider,
+		OnConnectFunc: func(c *MQTTClient) error {
+			err := c.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+				fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
+				fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
+			})
+			if err != nil {
+				return errors.Wrap(err, "RegisterConfigHandler error")
+			}
+
+			err = c.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
+				fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
+				cmd, err := NewCommandMessage(msg.Payload())
+				if err != nil {
+					fmt.Printf("NewCommandMessage error %v\n", err)
+					return
+				}
+				fmt.Printf("[command handler] CommandMessage: %v\n", cmd)
+			})
+			if err != nil {
+				return errors.Wrap(err, "RegisterCommandHandler error")
+			}
+			return nil
+		},
+	}
+
+	mc, err := NewMQTTClient(spec)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
 
-	isConnectionGood := mc.IsConnectionGood()
-	fmt.Printf("IsConnectionGood %t\n", isConnectionGood)
+	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
 
 	err = mc.Connect()
 	if err != nil {
 		t.Errorf("Error raised in Connect: %v\n", err)
 	}
 
-	isConnectionGood = mc.IsConnectionGood()
-	fmt.Printf("IsConnectionGood %t\n", isConnectionGood)
-
-	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
-	})
-	if err != nil {
-		t.Errorf("Error raised in RegisterConfigHandler: %v\n", err)
-	}
-
-	err = mc.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
-		cmd, err := NewCommandMessage(msg.Payload())
-		if err != nil {
-			fmt.Printf("NewCommandMessage error %v\n", err)
-			return
-		}
-		fmt.Printf("[command handler] CommandMessage: %v\n", cmd)
-	})
-	if err != nil {
-		t.Errorf("Error raised in RegisterCommandHandler: %v\n", err)
-	}
+	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
 
 	fmt.Println("Publishing a config type of thing")
 	publishConfig := `{"config": "test here, there, there, and everywhere"}`
@@ -157,12 +166,14 @@ func TestTelemetryClient(t *testing.T) {
 
 	loop := true
 
-	isConnectionGood = mc.IsConnectionGood()
-	fmt.Printf("IsConnectionGood %t\n", isConnectionGood)
+	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
 
 	go func() {
 		for loop {
 			fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
+			if !mc.IsConnectionGood() {
+				fmt.Printf("Its fallen off a cliff\n")
+			}
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
@@ -193,49 +204,45 @@ func TestTelemetryClient(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	cfg := MQTTClientConfig{
-		Host:                   Host,
-		Port:                   Port,
-		RootCertFile:           RootCertFile,
-		PrivateKeyPEMFile:      PrivateKeyPEMFile,
-		ProjectID:              ProjectID,
-		CloudRegion:            CloudRegion,
-		RegistryID:             RegistryID,
-		DeviceID:               DeviceID,
-		ReconnectRetryAttempts: 5,
-		ReconnectRetryTimeout:  5 * time.Second,
-		CommunicationAttempts:  5,
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mc, err := NewMQTTClient(ctx, cfg, testHander, credentialsProvider)
+	spec := NewMQTTClientConfig{
+		Context:              ctx,
+		ClientConfig:         GetClientConfig(),
+		DefaultMessageHander: testHander,
+		CredentialsProvider:  credentialsProvider,
+		OnConnectFunc: func(c *MQTTClient) error {
+			err := c.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+				fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
+				fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
+			})
+			if err != nil {
+				return errors.Wrap(err, "RegisterConfigHandler error")
+			}
+
+			err = c.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
+				fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
+				fmt.Printf("[command handler] Payload: %v\n", msg.Payload())
+			})
+			if err != nil {
+				return errors.Wrap(err, "RegisterCommandHandler error")
+			}
+			return nil
+		},
+	}
+
+	mc, err := NewMQTTClient(spec)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
 	}
 
 	err = mc.Connect()
+
 	if err != nil {
 		t.Errorf("Error raised in connecting: %v\n", err)
 		return
-	}
-
-	err = mc.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
-	})
-	if err != nil {
-		t.Errorf("Error raised in RegisterConfigHandler: %v\n", err)
-	}
-
-	err = mc.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
-		fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
-		fmt.Printf("[command handler] Payload: %v\n", msg.Payload())
-	})
-	if err != nil {
-		t.Errorf("Error raised in RegisterCommandHandler: %v\n", err)
 	}
 
 	obj := &TestMessage{
@@ -245,21 +252,32 @@ func TestClient(t *testing.T) {
 	}
 	publishMessages(obj, t, mc, 0, 0)
 
-	fmt.Println("Now waiting for 5 minutes for JWT to expire, with 5 second messages")
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Minute)
+	delay := time.Duration(5)
+	fmt.Printf("Now waiting for %d minutes for JWT to expire, with %d second messages\n", delay, delay)
+	ctx2, cancel2 := context.WithTimeout(context.Background(), delay*time.Minute)
 
-	i := 1
-	for {
-		select {
-		case <-time.After(5 * time.Second):
-			publishMessages(obj, t, mc, i, i)
-			i++
-			continue
-		case <-ctx2.Done():
-			cancel2()
-			fmt.Println("halted operation2")
-			break
+	byebye := make(chan bool)
+
+	go func() {
+		i := 1
+		for {
+			select {
+			case <-time.After(delay * time.Second):
+				publishMessages(obj, t, mc, i, i)
+				i++
+				continue
+			case <-ctx2.Done():
+				cancel2()
+				fmt.Println("halted operation2")
+				byebye <- true
+				return
+			}
 		}
+	}()
+
+	select {
+	case <-byebye:
+		break
 	}
 
 	publishMessages(obj, t, mc, 10, 10)

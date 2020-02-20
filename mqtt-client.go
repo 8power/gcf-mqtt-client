@@ -25,8 +25,8 @@ var ErrorNotConnected = fmt.Errorf("Not Connected")
 var ErrorMQTTTimeout = fmt.Errorf("MQTT Timeout")
 var clientDefaultTimeout = (5 * time.Second)
 
-// MQTTClientConfig holds the essential elements needed to configure the MQTTClient
-type MQTTClientConfig struct {
+// ClientConfig holds the essential elements needed to configure the MQTTClient
+type ClientConfig struct {
 	Host                   string
 	Port                   string
 	RootCertFile           string
@@ -48,10 +48,14 @@ type MQTTTopics struct {
 	commandsSubscriptionTopic string
 }
 
+// MQTTConnectFunction is called when a connection has occured.
+type MQTTConnectFunction func(*MQTTClient) error
+
 // MQTTClient contains the essential elements that the MQTT client needs to function
 type MQTTClient struct {
 	Client                MQTT.Client
-	Config                MQTTClientConfig
+	Config                ClientConfig
+	OnConnectFunc         MQTTConnectFunction
 	messageQueue          *MessageQueue
 	topics                MQTTTopics
 	context               context.Context
@@ -59,7 +63,17 @@ type MQTTClient struct {
 	communicationAttempts int
 }
 
+// NewMQTTClientConfig holds the elements required to create the client
+type NewMQTTClientConfig struct {
+	Context              context.Context
+	ClientConfig         ClientConfig
+	DefaultMessageHander MQTT.MessageHandler
+	CredentialsProvider  MQTT.CredentialsProvider
+	OnConnectFunc        MQTTConnectFunction
+}
+
 func connectionLostHandler(client MQTT.Client, err error) {
+	fmt.Printf("[connectionLostHandler] starting")
 	connection := client.IsConnected() && client.IsConnectionOpen()
 	fmt.Printf("Connection %t\n", connection)
 	client.Disconnect(100)
@@ -68,16 +82,16 @@ func connectionLostHandler(client MQTT.Client, err error) {
 }
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient.
-func NewMQTTClient(ctx context.Context, cfg MQTTClientConfig, defaultHandler MQTT.MessageHandler, credentialsProvider MQTT.CredentialsProvider) (*MQTTClient, error) {
+func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 	certpool := x509.NewCertPool()
-	pemCerts, err := ioutil.ReadFile(cfg.RootCertFile)
+	pemCerts, err := ioutil.ReadFile(spec.ClientConfig.RootCertFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to read Root Cert File")
 	}
 
 	certpool.AppendCertsFromPEM(pemCerts)
 
-	config := &tls.Config{
+	tlscfg := &tls.Config{
 		RootCAs:            certpool,
 		ClientAuth:         tls.NoClientCert,
 		ClientCAs:          nil,
@@ -86,26 +100,26 @@ func NewMQTTClient(ctx context.Context, cfg MQTTClientConfig, defaultHandler MQT
 		MinVersion:         tls.VersionTLS12,
 	}
 
+	if spec.ClientConfig.ReconnectRetryAttempts == 0 {
+		spec.ClientConfig.ReconnectRetryAttempts = 3
+	}
+
+	if spec.ClientConfig.ReconnectRetryTimeout == 0 {
+		spec.ClientConfig.ReconnectRetryTimeout = 5 * time.Second
+	}
+
+	if spec.ClientConfig.CommunicationAttempts == 0 {
+		spec.ClientConfig.CommunicationAttempts = 3
+	}
+
 	opts := MQTT.NewClientOptions()
-	opts.AddBroker(getMQTTBrokerAddress(cfg))
-	opts.SetClientID(getMQTTClientID(cfg))
-	opts.SetTLSConfig(config)
-	opts.SetAutoReconnect(true)
-	opts.SetConnectionLostHandler(connectionLostHandler)
-	opts.SetCredentialsProvider(credentialsProvider)
-	opts.SetDefaultPublishHandler(defaultHandler)
-
-	if cfg.ReconnectRetryAttempts == 0 {
-		cfg.ReconnectRetryAttempts = 3
-	}
-
-	if cfg.ReconnectRetryTimeout == 0 {
-		cfg.ReconnectRetryTimeout = 5 * time.Second
-	}
-
-	if cfg.CommunicationAttempts == 0 {
-		cfg.CommunicationAttempts = 3
-	}
+	opts = opts.AddBroker(getMQTTBrokerAddress(spec.ClientConfig))
+	opts = opts.SetClientID(getMQTTClientID(spec.ClientConfig))
+	opts = opts.SetTLSConfig(tlscfg)
+	opts = opts.SetAutoReconnect(true)
+	opts = opts.SetConnectionLostHandler(connectionLostHandler)
+	opts = opts.SetCredentialsProvider(spec.CredentialsProvider)
+	opts = opts.SetDefaultPublishHandler(spec.DefaultMessageHander)
 
 	mq, err := NewMessageQueue("mqtt-queue")
 	if err != nil {
@@ -114,8 +128,9 @@ func NewMQTTClient(ctx context.Context, cfg MQTTClientConfig, defaultHandler MQT
 
 	mc := &MQTTClient{
 		Client:                MQTT.NewClient(opts),
-		Config:                cfg,
-		context:               ctx,
+		Config:                spec.ClientConfig,
+		OnConnectFunc:         spec.OnConnectFunc,
+		context:               spec.Context,
 		messageQueue:          mq,
 		dataAvailable:         make(chan bool),
 		communicationAttempts: 0,
@@ -146,17 +161,24 @@ func (mc *MQTTClient) publishHandler() {
 	}
 }
 
+func (mc *MQTTClient) isConnected() bool {
+	if mc == nil {
+		return false
+	}
+	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
+}
+
 func (mc *MQTTClient) publishAllAvailable() {
 	log.Println("[publishAllAvailable] starting")
 	err := retry.Do(
 		func() error {
-			if !mc.isConnectionGood() {
+			if !mc.isConnected() {
 				err := mc.Connect()
 				if err != nil {
 					log.Printf("[publishAllAvailable] Error: %v\n", err)
 					return ErrorNotConnected
 				}
-				if !mc.isConnectionGood() {
+				if !mc.isConnected() {
 					log.Println("[publishAllAvailable] NOT CONNECTED")
 					return ErrorNotConnected
 				}
@@ -189,6 +211,7 @@ func (mc *MQTTClient) publishAllAvailable() {
 	} else {
 		mc.communicationAttempts = 0
 	}
+	log.Println("[publishAllAvailable] complete")
 }
 
 func tokenChecker(token MQTT.Token) error {
@@ -202,42 +225,71 @@ func tokenChecker(token MQTT.Token) error {
 	return nil
 }
 
+const mqttStandOff = 250 * time.Millisecond
+
 // Connect attempts to connect to the MQTT Broker and returns an error if
 // unsuccessful
 func (mc *MQTTClient) Connect() error {
+	if mc == nil {
+		return ErrorNotConnected
+	}
+
+	log.Printf("[Connect] starting")
+	defer log.Printf("[Connect] complete")
+
 	err := tokenChecker(mc.Client.Connect())
 	if err != nil {
 		return errors.Wrap(err, "MQTTClient Connect error")
+	}
+
+	retry.Do(func() error {
+		if !mc.isConnected() {
+			return ErrorNotConnected
+		}
+		return nil
+	},
+		retry.Attempts(4),
+		retry.Delay(mqttStandOff),
+		retry.OnRetry(func(u uint, err error) {
+			log.Printf("[Connect] retesting connection attempt: %d", u)
+		}),
+	)
+	err = mc.OnConnectFunc(mc)
+	if err != nil {
+		return errors.Wrap(err, "onConnected callback error")
 	}
 	return nil
 }
 
 // Disconnect from the MQTT client
 func (mc *MQTTClient) Disconnect() error {
-	if mc == nil || !mc.isConnectionGood() {
+	if mc == nil || !mc.isConnected() {
 		return ErrorNotConnected
 	}
 
-	log.Println("[MQTTClient] Disconnecting")
+	log.Println("[Disconnect] starting")
 	mc.Client.Disconnect(250)
+	log.Println("[Disconnect] complete")
 	return nil
-}
-
-func (mc *MQTTClient) isConnectionGood() bool {
-	fmt.Printf("[isConnectionGood] IsConnected: %t IsConnectionOpen: %t", mc.Client.IsConnected(), mc.Client.IsConnectionOpen())
-	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
 }
 
 // IsConnectionGood returns true if connection open and connected
 func (mc *MQTTClient) IsConnectionGood() bool {
 	if mc == nil {
+		log.Println("[IsConnectionGood] mc == nil")
 		return false
 	}
-	return mc.Config.CommunicationAttempts < mc.communicationAttempts
+
+	if !mc.isConnected() {
+		log.Println("[IsConnectionGood] isConnected false")
+		return false
+	}
+
+	return mc.communicationAttempts < mc.Config.CommunicationAttempts
 }
 
 func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler) error {
-	if mc == nil || !mc.isConnectionGood() {
+	if mc == nil || !mc.isConnected() {
 		return ErrorNotConnected
 	}
 	return tokenChecker(mc.Client.Subscribe(topic, Qos, handler))
@@ -299,7 +351,7 @@ func (mc *MQTTClient) PublishState(payload []byte) error {
 	return nil
 }
 
-func getMQTTClientID(cfg MQTTClientConfig) string {
+func getMQTTClientID(cfg ClientConfig) string {
 	return fmt.Sprintf("projects/%s/locations/%s/registries/%s/devices/%s",
 		cfg.ProjectID,
 		cfg.CloudRegion,
@@ -315,7 +367,7 @@ func (mc *MQTTClient) formatMQTTPublishTopicString(topic string) string {
 	return fmt.Sprintf("/projects/%s/topics/%s", mc.Config.ProjectID, topic)
 }
 
-func getMQTTBrokerAddress(cfg MQTTClientConfig) string {
+func getMQTTBrokerAddress(cfg ClientConfig) string {
 	brokerAddress := fmt.Sprintf("ssl://%s:%s", cfg.Host, cfg.Port)
 	log.Printf("[MQTTClient] getMQTTBrokerAddress %s", brokerAddress)
 	return brokerAddress
