@@ -8,14 +8,11 @@ import (
 	"os"
 	"time"
 
-	mq "github.com/8power/gcf-mqtt-client"
+	mq "github.com/8power/gcf-mqtt-client/mqtt"
 	jwtGo "github.com/dgrijalva/jwt-go"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/pkg/errors"
 )
-
-var RootCertFile string
-var PrivateKeyPEMFile string
 
 const (
 	Host        = "mqtt.googleapis.com"
@@ -26,7 +23,7 @@ const (
 	DeviceID    = "Gateway-F359P42"
 )
 
-func GetClientConfig() mq.ClientConfig {
+func getClientConfig() mq.ClientConfig {
 	home := os.Getenv("HOME")
 	return mq.ClientConfig{
 		Host:                   Host,
@@ -49,7 +46,7 @@ func main() {
 
 	spec := mq.NewMQTTClientConfig{
 		Context:              ctx,
-		ClientConfig:         GetClientConfig(),
+		ClientConfig:         getClientConfig(),
 		DefaultMessageHander: testHander,
 		CredentialsProvider:  credentialsProvider,
 		OnConnectFunc: func(c *mq.MQTTClient) error {

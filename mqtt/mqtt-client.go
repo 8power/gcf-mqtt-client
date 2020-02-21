@@ -1,4 +1,4 @@
-package mqttclient
+package mqtt
 
 import (
 	"crypto/tls"
@@ -286,9 +286,9 @@ func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
 }
 
 // RemoveConfigHandler removes the subscription for the Config topic and handler
-func (mc *MQTTClient) RemoveConfigHandler() error {
+/*func (mc *MQTTClient) RemoveConfigHandler() error {
 	return tokenChecker(mc.Client.Unsubscribe(mc.topics.configSubscriptionTopic))
-}
+}*/
 
 // RegisterCommandHandler registers the `handler` to the IOT cloud's device command topic
 func (mc *MQTTClient) RegisterCommandHandler(handler MQTT.MessageHandler) error {
@@ -296,9 +296,9 @@ func (mc *MQTTClient) RegisterCommandHandler(handler MQTT.MessageHandler) error 
 }
 
 // RemoveCommandHandler removes the subscription for the Command topic and handler
-func (mc *MQTTClient) RemoveCommandHandler() error {
+/*func (mc *MQTTClient) RemoveCommandHandler() error {
 	return tokenChecker(mc.Client.Unsubscribe(mc.topics.commandsSubscriptionTopic))
-}
+}*/
 
 func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	msg := Message{

@@ -3,6 +3,7 @@ module github.com/8power/gcf-mqtt-client
 go 1.12
 
 require (
+	github.com/8power/named-pipe v0.0.0-20200221134742-85490ddb629c
 	github.com/avast/retry-go v2.5.0+incompatible
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/eclipse/paho.mqtt.golang v1.2.0
