@@ -28,12 +28,12 @@ const (
 	ProjectID   = "skillful-mason-244208"
 	CloudRegion = "europe-west1"
 	RegistryID  = "vibration-energy-harvesting-registry"
-	DeviceID    = "pc-rob-desktop"
 )
 
 var (
 	RootCertFile      = "/home/" + os.Getenv("USER") + "/.certs/roots.pem"
 	PrivateKeyPEMFile = "/home/" + os.Getenv("USER") + "/.certs/iot_rsa_private.pem"
+	DeviceID          = "pc-" + os.Getenv("USER") + "-desktop"
 )
 
 func testHander(client MQTT.Client, msg MQTT.Message) {
