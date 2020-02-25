@@ -146,32 +146,32 @@ func TestTelemetryClient(t *testing.T) {
 		},
 	}
 
-	mc, err := NewMQTTClient(spec)
+	err := NewMQTTClient(spec)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
 
-	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
+	fmt.Printf("IsConnectionGood %t\n", MqttClient.IsConnectionGood())
 
-	err = mc.Connect()
+	err = MqttClient.ClientConnect()
 	if err != nil {
 		t.Errorf("Error raised in Connect: %v\n", err)
 	}
 
-	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
+	fmt.Printf("IsConnectionGood %t\n", MqttClient.IsConnectionGood())
 
 	fmt.Println("Publishing a config type of thing")
 	publishConfig := `{"config": "test here, there, there, and everywhere"}`
-	mc.PublishState([]byte(publishConfig))
+	MqttClient.PublishState([]byte(publishConfig))
 
 	loop := true
 
-	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
+	fmt.Printf("IsConnectionGood %t\n", MqttClient.IsConnectionGood())
 
 	go func() {
 		for loop {
-			fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
-			if !mc.IsConnectionGood() {
+			fmt.Printf("IsConnectionGood %t\n", MqttClient.IsConnectionGood())
+			if !MqttClient.IsConnectionGood() {
 				fmt.Printf("Its fallen off a cliff\n")
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -186,18 +186,7 @@ func TestTelemetryClient(t *testing.T) {
 	}
 
 	loop = false
-
-	err = mc.RemoveCommandHandler()
-	if err != nil {
-		t.Errorf("RemoveCommandHandler Error: %v\n", err)
-	}
-
-	err = mc.RemoveConfigHandler()
-	if err != nil {
-		t.Errorf("RemoveConfigHandler Error: %v\n", err)
-	}
-
-	err = mc.Disconnect()
+	err = MqttClient.ClientDisconnect()
 	if err != nil {
 		t.Errorf("Error raised during Disconnect: %v\n", err)
 	}
@@ -232,13 +221,13 @@ func TestClient(t *testing.T) {
 		},
 	}
 
-	mc, err := NewMQTTClient(spec)
+	err := NewMQTTClient(spec)
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
 	}
 
-	err = mc.Connect()
+	err = MqttClient.ClientConnect()
 
 	if err != nil {
 		t.Errorf("Error raised in connecting: %v\n", err)
@@ -250,7 +239,7 @@ func TestClient(t *testing.T) {
 		SequenceNumber: 1,
 		Timestamp:      int(time.Now().Unix()),
 	}
-	publishMessages(obj, t, mc, 0, 0)
+	publishMessages(obj, t, MqttClient, 0, 0)
 
 	delay := time.Duration(5)
 	fmt.Printf("Now waiting for %d minutes for JWT to expire, with %d second messages\n", delay, delay)
@@ -263,7 +252,7 @@ func TestClient(t *testing.T) {
 		for {
 			select {
 			case <-time.After(delay * time.Second):
-				publishMessages(obj, t, mc, i, i)
+				publishMessages(obj, t, MqttClient, i, i)
 				i++
 				continue
 			case <-ctx2.Done():
@@ -280,17 +269,17 @@ func TestClient(t *testing.T) {
 		break
 	}
 
-	publishMessages(obj, t, mc, 10, 10)
+	publishMessages(obj, t, MqttClient, 10, 10)
 
 	// Now disconnect and ensure that nothing more is sent
-	mc.Disconnect()
+	MqttClient.ClientDisconnect()
 	time.Sleep(5 * time.Second)
 
 	payload, err := json.Marshal(obj)
 	if err != nil {
 		t.Errorf("JSON Marshal error %v", err)
 	} else {
-		mc.PublishTelemetryEvent(payload)
+		MqttClient.PublishTelemetryEvent(payload)
 	}
 }
 

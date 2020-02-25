@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -38,7 +37,7 @@ func exitHandler() {
 	pipes.Close()
 
 	if mqttClient != nil {
-		err := mqttClient.Disconnect()
+		err := mqttClient.ClientConnect()
 		if err != nil {
 			log.Printf("mqttClient.Disconnect error %v\n", err)
 		}
@@ -59,21 +58,19 @@ func main() {
 		OnConnectFunc:        onConnect,
 	}
 
-	mc, err := mqtt.NewMQTTClient(spec)
+	err := mqtt.NewMQTTClient(spec)
 	if err != nil {
 		log.Fatalf("Error raised in NewMQTTClient: %v\n", err)
 	}
 
 	log.Println("[gcf-mqtt-client] connecting")
-	err = mc.Connect()
+	err = mqtt.MqttClient.ClientConnect()
 	if err != nil {
 		log.Fatalf("Connect error: %v\n", err)
 	}
 
 	log.Println("[gcf-mqtt-client] service running...")
-	mqttClient = mc
-
-	setupPipeHandlers(mqttClient)
+	setupPipeHandlers(mqtt.MqttClient)
 
 	select {
 	case <-signals:
@@ -84,18 +81,20 @@ func main() {
 
 func setupPipeHandlers(mc *mqtt.MQTTClient) {
 	go pipes.Telemetry.Read(func(b []byte) {
+		log.Printf("[Telemetry] publishing event\n")
 		mc.PublishTelemetryEvent(b)
 	})
 
 	go pipes.State.Read(func(b []byte) {
+		log.Printf("[State] publishing state\n")
 		mc.PublishState(b)
 	})
 }
 
 func defaultHandler(client MQTT.Client, msg MQTT.Message) {
 	log.Printf("ERROR Unhandled message received\n")
-	fmt.Printf("[defaultHandler] Topic: %v\n", msg.Topic())
-	fmt.Printf("[defaultHandler] Payload: %v\n", msg.Payload())
+	log.Printf("[defaultHandler] Topic: %v\n", msg.Topic())
+	log.Printf("[defaultHandler] Payload: %v\n", msg.Payload())
 }
 
 func onConnect(client *mqtt.MQTTClient) error {

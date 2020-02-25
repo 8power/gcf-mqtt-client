@@ -21,23 +21,23 @@ const Qos = 1
 // ErrorNotConnected is raised when...
 var ErrorNotConnected = fmt.Errorf("Not Connected")
 
+// ErrorPublishAllAvailableBusy is raised when the function is currently busy.
+var ErrorPublishAllAvailableBusy = fmt.Errorf("publishAllAvailable busy")
+
 // ErrorMQTTTimeout returned in the case of a Timeout
 var ErrorMQTTTimeout = fmt.Errorf("MQTT Timeout")
 var clientDefaultTimeout = (5 * time.Second)
 
 // ClientConfig holds the essential elements needed to configure the MQTTClient
 type ClientConfig struct {
-	Host                   string
-	Port                   string
-	RootCertFile           string
-	PrivateKeyPEMFile      string
-	ProjectID              string
-	CloudRegion            string
-	RegistryID             string
-	DeviceID               string
-	ReconnectRetryAttempts uint
-	ReconnectRetryTimeout  time.Duration
-	CommunicationAttempts  int
+	Host              string
+	Port              string
+	RootCertFile      string
+	PrivateKeyPEMFile string
+	ProjectID         string
+	CloudRegion       string
+	RegistryID        string
+	DeviceID          string
 }
 
 // MQTTTopics hold all the Topic names used by the client
@@ -53,14 +53,13 @@ type MQTTConnectFunction func(*MQTTClient) error
 
 // MQTTClient contains the essential elements that the MQTT client needs to function
 type MQTTClient struct {
-	Client                MQTT.Client
-	Config                ClientConfig
-	OnConnectFunc         MQTTConnectFunction
-	messageQueue          *MessageQueue
-	topics                MQTTTopics
-	context               context.Context
-	dataAvailable         chan bool
-	communicationAttempts int
+	Client        MQTT.Client
+	Config        ClientConfig
+	OnConnectFunc MQTTConnectFunction
+	messageQueue  *MessageQueue
+	topics        MQTTTopics
+	context       context.Context
+	dataAvailable chan bool
 }
 
 // NewMQTTClientConfig holds the elements required to create the client
@@ -72,21 +71,22 @@ type NewMQTTClientConfig struct {
 	OnConnectFunc        MQTTConnectFunction
 }
 
-func connectionLostHandler(client MQTT.Client, err error) {
-	fmt.Printf("[connectionLostHandler] starting")
-	connection := client.IsConnected() && client.IsConnectionOpen()
-	fmt.Printf("Connection %t\n", connection)
-	client.Disconnect(100)
-	connection = client.IsConnected() && client.IsConnectionOpen()
-	fmt.Printf("Connection %t\n", connection)
-}
+// MqttClient is a singleton client
+var MqttClient *MQTTClient
+
+const mqttStandOff = 250 * time.Millisecond
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient.
-func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
+func NewMQTTClient(spec NewMQTTClientConfig) error {
+	/*MQTT.DEBUG = log.New(os.Stderr, "DEBUG    ", log.Ltime)
+	MQTT.WARN = log.New(os.Stderr, "WARNING  ", log.Ltime)
+	MQTT.CRITICAL = log.New(os.Stderr, "CRITICAL ", log.Ltime)
+	MQTT.ERROR = log.New(os.Stderr, "ERROR    ", log.Ltime)*/
+
 	certpool := x509.NewCertPool()
 	pemCerts, err := ioutil.ReadFile(spec.ClientConfig.RootCertFile)
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to read Root Cert File")
+		return errors.Wrap(err, "Failed to read Root Cert File")
 	}
 
 	certpool.AppendCertsFromPEM(pemCerts)
@@ -100,18 +100,6 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 		MinVersion:         tls.VersionTLS12,
 	}
 
-	if spec.ClientConfig.ReconnectRetryAttempts == 0 {
-		spec.ClientConfig.ReconnectRetryAttempts = 3
-	}
-
-	if spec.ClientConfig.ReconnectRetryTimeout == 0 {
-		spec.ClientConfig.ReconnectRetryTimeout = 5 * time.Second
-	}
-
-	if spec.ClientConfig.CommunicationAttempts == 0 {
-		spec.ClientConfig.CommunicationAttempts = 3
-	}
-
 	opts := MQTT.NewClientOptions()
 	opts = opts.AddBroker(getMQTTBrokerAddress(spec.ClientConfig))
 	opts = opts.SetClientID(getMQTTClientID(spec.ClientConfig))
@@ -123,40 +111,44 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 
 	mq, err := NewMessageQueue("mqtt-queue")
 	if err != nil {
-		return nil, errors.Wrap(err, "NewMessageQueue")
+		return errors.Wrap(err, "NewMessageQueue")
 	}
 
-	mc := &MQTTClient{
-		Client:                MQTT.NewClient(opts),
-		Config:                spec.ClientConfig,
-		OnConnectFunc:         spec.OnConnectFunc,
-		context:               spec.Context,
-		messageQueue:          mq,
-		dataAvailable:         make(chan bool),
-		communicationAttempts: 0,
+	MqttClient = &MQTTClient{
+		Client:        MQTT.NewClient(opts),
+		Config:        spec.ClientConfig,
+		OnConnectFunc: spec.OnConnectFunc,
+		context:       spec.Context,
+		messageQueue:  mq,
+		dataAvailable: make(chan bool),
 	}
 
-	mc.topics = MQTTTopics{
-		telemetryPublishTopic:     mc.formatMQTTTopicString("events"),
-		statePublishTopic:         mc.formatMQTTTopicString("state"),
-		configSubscriptionTopic:   mc.formatMQTTTopicString("config"),
-		commandsSubscriptionTopic: mc.formatMQTTTopicString("commands/#"),
+	MqttClient.topics = MQTTTopics{
+		telemetryPublishTopic:     MqttClient.formatMQTTTopicString("events"),
+		statePublishTopic:         MqttClient.formatMQTTTopicString("state"),
+		configSubscriptionTopic:   MqttClient.formatMQTTTopicString("config"),
+		commandsSubscriptionTopic: MqttClient.formatMQTTTopicString("commands/#"),
 	}
 
-	go mc.publishHandler()
+	MqttClient.publishHandler()
+	return nil
+}
 
-	return mc, nil
+func connectionLostHandler(client MQTT.Client, err error) {
+	fmt.Printf("[connectionLostHandler] called")
 }
 
 func (mc *MQTTClient) publishHandler() {
-	for {
-		select {
-		case <-mc.context.Done():
-			return
-		case <-mc.dataAvailable:
-			mc.publishAllAvailable()
+	go func() {
+		for {
+			select {
+			case <-mc.context.Done():
+				return
+			case <-mc.dataAvailable:
+				mc.publishAllAvailable()
+			}
 		}
-	}
+	}()
 }
 
 func (mc *MQTTClient) isConnected() bool {
@@ -167,43 +159,25 @@ func (mc *MQTTClient) isConnected() bool {
 }
 
 func (mc *MQTTClient) publishAllAvailable() {
-	err := retry.Do(
-		func() error {
-			if !mc.isConnected() {
-				err := mc.Connect()
-				if err != nil {
-					return ErrorNotConnected
-				}
-				if !mc.isConnected() {
-					return ErrorNotConnected
-				}
-			}
+	if !mc.isConnected() {
+		fmt.Printf("[publishAllAvailable] client not connected\n")
+		return
+	}
 
-			for {
-				dst, ok, err := mc.messageQueue.FirstMessage()
-				if !ok {
-					if err != nil {
-						return errors.Wrap(err, "FirstMessage error")
-					}
-					return nil
-				}
-				err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
-				if err != nil {
-					return errors.Wrapf(err, "Publish error")
-				}
-				mc.messageQueue.RemoveFirstMessage()
+	for {
+		dst, ok, err := mc.messageQueue.FirstMessage()
+		if !ok {
+			if err != nil {
+				fmt.Printf("[publishAllAvailable] error %v", errors.Wrap(err, "FirstMessage error"))
 			}
-		},
-		retry.Attempts(mc.Config.ReconnectRetryAttempts),
-		retry.Delay(mc.Config.ReconnectRetryTimeout),
-		retry.OnRetry(func(u uint, err error) {
-			log.Printf("### [RetryFunction] instance number: %d. Error: %v", u, err)
-		}),
-	)
-	if err != nil {
-		mc.communicationAttempts++
-	} else {
-		mc.communicationAttempts = 0
+			return
+		}
+		err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
+		if err != nil {
+			fmt.Printf("[publishAllAvailable] error %v", errors.Wrapf(err, "Publish error"))
+			return
+		}
+		mc.messageQueue.RemoveFirstMessage()
 	}
 }
 
@@ -218,21 +192,19 @@ func tokenChecker(token MQTT.Token) error {
 	return nil
 }
 
-const mqttStandOff = 250 * time.Millisecond
-
-// Connect attempts to connect to the MQTT Broker and returns an error if
+// ClientConnect attempts to connect to the MQTT Broker and returns an error if
 // unsuccessful
-func (mc *MQTTClient) Connect() error {
+func (mc *MQTTClient) ClientConnect() error {
 	if mc == nil {
 		return ErrorNotConnected
 	}
 
-	err := tokenChecker(mc.Client.Connect())
-	if err != nil {
-		return errors.Wrap(err, "MQTTClient Connect error")
-	}
+	err := retry.Do(func() error {
+		err := tokenChecker(mc.Client.Connect())
+		if err != nil {
+			return errors.Wrap(err, "MQTTClient Connect error")
+		}
 
-	retry.Do(func() error {
 		if !mc.isConnected() {
 			return ErrorNotConnected
 		}
@@ -244,6 +216,11 @@ func (mc *MQTTClient) Connect() error {
 			log.Printf("[Connect] retesting connection attempt: %d", u)
 		}),
 	)
+
+	if err != nil {
+		return errors.Wrap(err, "Connection error")
+	}
+
 	err = mc.OnConnectFunc(mc)
 	if err != nil {
 		return errors.Wrap(err, "onConnected callback error")
@@ -251,8 +228,8 @@ func (mc *MQTTClient) Connect() error {
 	return nil
 }
 
-// Disconnect from the MQTT client
-func (mc *MQTTClient) Disconnect() error {
+// ClientDisconnect from the MQTT client
+func (mc *MQTTClient) ClientDisconnect() error {
 	if mc == nil || !mc.isConnected() {
 		return ErrorNotConnected
 	}
@@ -269,8 +246,7 @@ func (mc *MQTTClient) IsConnectionGood() bool {
 	if !mc.isConnected() {
 		return false
 	}
-
-	return mc.communicationAttempts < mc.Config.CommunicationAttempts
+	return true
 }
 
 func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler) error {
@@ -285,20 +261,10 @@ func (mc *MQTTClient) RegisterConfigHandler(handler MQTT.MessageHandler) error {
 	return mc.registerHandler(mc.topics.configSubscriptionTopic, handler)
 }
 
-// RemoveConfigHandler removes the subscription for the Config topic and handler
-/*func (mc *MQTTClient) RemoveConfigHandler() error {
-	return tokenChecker(mc.Client.Unsubscribe(mc.topics.configSubscriptionTopic))
-}*/
-
 // RegisterCommandHandler registers the `handler` to the IOT cloud's device command topic
 func (mc *MQTTClient) RegisterCommandHandler(handler MQTT.MessageHandler) error {
 	return mc.registerHandler(mc.topics.commandsSubscriptionTopic, handler)
 }
-
-// RemoveCommandHandler removes the subscription for the Command topic and handler
-/*func (mc *MQTTClient) RemoveCommandHandler() error {
-	return tokenChecker(mc.Client.Unsubscribe(mc.topics.commandsSubscriptionTopic))
-}*/
 
 func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	msg := Message{
@@ -307,11 +273,11 @@ func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	}
 	// append(a[:0], src...) is a safe copy
 	msg.Payload = append(msg.Payload[:0], payload...)
-
 	err := mc.messageQueue.QueueMessage(msg)
 	if err != nil {
 		return errors.Wrap(err, "QueueMessage error")
 	}
+
 	fmt.Printf("Message queue size %d\n", mc.messageQueue.QueueSize())
 	mc.dataAvailable <- true
 	return nil

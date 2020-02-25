@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [ "$1" != "" ]; then
+    go mod tidy
+    go build
+    scp -r ./gcf-mqtt-client gcf-mqtt-client.service admin@$1:~
+else
+    echo "You must define a destination IP address"
+fi

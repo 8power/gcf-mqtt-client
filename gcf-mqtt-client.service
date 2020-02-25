@@ -1,0 +1,19 @@
+[Unit]
+Description="Google Cloud MQTT Service"
+After=network-online.target
+
+[Service]
+Environment="DEVICE_ID=Gateway-"
+Environment="HOST=mqtt.googleapis.com"
+Environment="PORT=8883"
+Environment="PROJECT_ID=skillful-mason-244208"
+Environment="CLOUD_REGION=europe-west1"
+Environment="REGISTRY_ID=vibration-energy-harvesting-registry"
+Environment="ROOTS_CERT=/home/admin/.certs/roots.pem"
+Environment="PEM_FILE=/home/admin/.certs/iot_rsa_private.pem"
+WorkingDirectory=/home/admin
+ExecStart=/home/admin/gcf-mqtt-client
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

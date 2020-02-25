@@ -1,5 +1,5 @@
-github.com/8power/named-pipe v0.0.0-20200221134742-85490ddb629c h1:MmJINrJN0eVCU5+tqMbDu+22L0oJHp1I5U5dZjg0ff0=
-github.com/8power/named-pipe v0.0.0-20200221134742-85490ddb629c/go.mod h1:Mg+HURrvkzR5HMxJ4pOMvzmTu+nwJiSfQWkFrScvrf8=
+github.com/8power/named-pipe v0.0.0-20200224144045-0607ec5a029c h1:uSK0b7L9YhYwFMJVc0uVrtnJbF3fAn2XXtJdN17Kw+w=
+github.com/8power/named-pipe v0.0.0-20200224144045-0607ec5a029c/go.mod h1:Mg+HURrvkzR5HMxJ4pOMvzmTu+nwJiSfQWkFrScvrf8=
 github.com/avast/retry-go v2.5.0+incompatible h1:8SaFqliw34WeeaPs+GEtMMkiwEsC2S6+YyqnLqI55Ks=
 github.com/avast/retry-go v2.5.0+incompatible/go.mod h1:XtSnn+n/sHqQIpZ10K1qAevBhOOCWBLXXy3hyiqqBrY=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
