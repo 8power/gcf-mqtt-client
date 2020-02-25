@@ -56,12 +56,12 @@ type MQTTClient struct {
 	messageQueue  *MessageQueue
 	topics        MQTTTopics
 	context       context.Context
+	CtxCancelFunc context.CancelFunc
 	dataAvailable chan bool
 }
 
 // NewMQTTClientConfig holds the elements required to create the client
 type NewMQTTClientConfig struct {
-	Context              context.Context
 	ClientConfig         ClientConfig
 	DefaultMessageHander MQTT.MessageHandler
 	CredentialsProvider  MQTT.CredentialsProvider
@@ -101,11 +101,14 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 		return nil, errors.Wrap(err, "NewMessageQueue")
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	mc := &MQTTClient{
 		Client:        MQTT.NewClient(opts),
 		Config:        spec.ClientConfig,
 		OnConnectFunc: spec.OnConnectFunc,
-		context:       spec.Context,
+		context:       ctx,
+		CtxCancelFunc: cancel,
 		messageQueue:  mq,
 		dataAvailable: make(chan bool),
 	}
@@ -164,6 +167,7 @@ func (mc *MQTTClient) publishAllAvailable() {
 			return
 		}
 		mc.messageQueue.RemoveFirstMessage()
+		fmt.Printf("Message published. Queue Size: %d\n", mc.messageQueue.QueueSize())
 	}
 }
 

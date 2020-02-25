@@ -114,11 +114,7 @@ func GetClientConfig() ClientConfig {
 }
 
 func TestTelemetryClient(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	spec := NewMQTTClientConfig{
-		Context:              ctx,
 		ClientConfig:         GetClientConfig(),
 		DefaultMessageHander: testHander,
 		CredentialsProvider:  credentialsProvider,
@@ -151,6 +147,7 @@ func TestTelemetryClient(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
+	defer mc.CtxCancelFunc()
 
 	fmt.Printf("IsConnectionGood %t\n", mc.IsConnectionGood())
 
@@ -205,11 +202,7 @@ func TestTelemetryClient(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	spec := NewMQTTClientConfig{
-		Context:              ctx,
 		ClientConfig:         GetClientConfig(),
 		DefaultMessageHander: testHander,
 		CredentialsProvider:  credentialsProvider,
@@ -238,6 +231,7 @@ func TestClient(t *testing.T) {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
 	}
+	defer mc.CtxCancelFunc()
 
 	err = mc.Connect()
 
