@@ -27,17 +27,14 @@ var clientDefaultTimeout = (5 * time.Second)
 
 // ClientConfig holds the essential elements needed to configure the MQTTClient
 type ClientConfig struct {
-	Host                   string
-	Port                   string
-	RootCertFile           string
-	PrivateKeyPEMFile      string
-	ProjectID              string
-	CloudRegion            string
-	RegistryID             string
-	DeviceID               string
-	ReconnectRetryAttempts uint
-	ReconnectRetryTimeout  time.Duration
-	CommunicationAttempts  int
+	Host              string
+	Port              string
+	RootCertFile      string
+	PrivateKeyPEMFile string
+	ProjectID         string
+	CloudRegion       string
+	RegistryID        string
+	DeviceID          string
 }
 
 // MQTTTopics hold all the Topic names used by the client
@@ -53,14 +50,13 @@ type MQTTConnectFunction func(*MQTTClient) error
 
 // MQTTClient contains the essential elements that the MQTT client needs to function
 type MQTTClient struct {
-	Client                MQTT.Client
-	Config                ClientConfig
-	OnConnectFunc         MQTTConnectFunction
-	messageQueue          *MessageQueue
-	topics                MQTTTopics
-	context               context.Context
-	dataAvailable         chan bool
-	communicationAttempts int
+	Client        MQTT.Client
+	Config        ClientConfig
+	OnConnectFunc MQTTConnectFunction
+	messageQueue  *MessageQueue
+	topics        MQTTTopics
+	context       context.Context
+	dataAvailable chan bool
 }
 
 // NewMQTTClientConfig holds the elements required to create the client
@@ -70,11 +66,6 @@ type NewMQTTClientConfig struct {
 	DefaultMessageHander MQTT.MessageHandler
 	CredentialsProvider  MQTT.CredentialsProvider
 	OnConnectFunc        MQTTConnectFunction
-}
-
-func connectionLostHandler(client MQTT.Client, err error) {
-	fmt.Printf("[connectionLostHandler] starting")
-	client.Disconnect(100)
 }
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient.
@@ -96,18 +87,6 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 		MinVersion:         tls.VersionTLS12,
 	}
 
-	if spec.ClientConfig.ReconnectRetryAttempts == 0 {
-		spec.ClientConfig.ReconnectRetryAttempts = 3
-	}
-
-	if spec.ClientConfig.ReconnectRetryTimeout == 0 {
-		spec.ClientConfig.ReconnectRetryTimeout = 5 * time.Second
-	}
-
-	if spec.ClientConfig.CommunicationAttempts == 0 {
-		spec.ClientConfig.CommunicationAttempts = 3
-	}
-
 	opts := MQTT.NewClientOptions()
 	opts = opts.AddBroker(getMQTTBrokerAddress(spec.ClientConfig))
 	opts = opts.SetClientID(getMQTTClientID(spec.ClientConfig))
@@ -123,13 +102,12 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 	}
 
 	mc := &MQTTClient{
-		Client:                MQTT.NewClient(opts),
-		Config:                spec.ClientConfig,
-		OnConnectFunc:         spec.OnConnectFunc,
-		context:               spec.Context,
-		messageQueue:          mq,
-		dataAvailable:         make(chan bool),
-		communicationAttempts: 0,
+		Client:        MQTT.NewClient(opts),
+		Config:        spec.ClientConfig,
+		OnConnectFunc: spec.OnConnectFunc,
+		context:       spec.Context,
+		messageQueue:  mq,
+		dataAvailable: make(chan bool),
 	}
 
 	mc.topics = MQTTTopics{
@@ -142,6 +120,10 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 	go mc.publishHandler()
 
 	return mc, nil
+}
+
+func connectionLostHandler(client MQTT.Client, err error) {
+	fmt.Printf("[connectionLostHandler] invoked")
 }
 
 func (mc *MQTTClient) publishHandler() {
@@ -163,43 +145,25 @@ func (mc *MQTTClient) isConnected() bool {
 }
 
 func (mc *MQTTClient) publishAllAvailable() {
-	err := retry.Do(
-		func() error {
-			if !mc.isConnected() {
-				err := mc.Connect()
-				if err != nil {
-					return ErrorNotConnected
-				}
-				if !mc.isConnected() {
-					return ErrorNotConnected
-				}
-			}
+	if !mc.isConnected() {
+		fmt.Printf("[publishAllAvailable] client not connected\n")
+		return
+	}
 
-			for {
-				dst, ok, err := mc.messageQueue.FirstMessage()
-				if !ok {
-					if err != nil {
-						return errors.Wrap(err, "FirstMessage error")
-					}
-					return nil
-				}
-				err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
-				if err != nil {
-					return errors.Wrapf(err, "Publish error")
-				}
-				mc.messageQueue.RemoveFirstMessage()
+	for {
+		dst, ok, err := mc.messageQueue.FirstMessage()
+		if !ok {
+			if err != nil {
+				fmt.Printf("[publishAllAvailable] error %v", errors.Wrap(err, "FirstMessage error"))
 			}
-		},
-		retry.Attempts(mc.Config.ReconnectRetryAttempts),
-		retry.Delay(mc.Config.ReconnectRetryTimeout),
-		retry.OnRetry(func(u uint, err error) {
-			log.Printf("### [RetryFunction] instance number: %d. Error: %v", u, err)
-		}),
-	)
-	if err != nil {
-		mc.communicationAttempts++
-	} else {
-		mc.communicationAttempts = 0
+			return
+		}
+		err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
+		if err != nil {
+			fmt.Printf("[publishAllAvailable] error %v", errors.Wrapf(err, "Publish error"))
+			return
+		}
+		mc.messageQueue.RemoveFirstMessage()
 	}
 }
 
@@ -265,8 +229,7 @@ func (mc *MQTTClient) IsConnectionGood() bool {
 	if !mc.isConnected() {
 		return false
 	}
-
-	return mc.communicationAttempts < mc.Config.CommunicationAttempts
+	return true
 }
 
 func (mc *MQTTClient) registerHandler(topic string, handler MQTT.MessageHandler) error {
@@ -308,6 +271,9 @@ func (mc *MQTTClient) publish(topic string, payload []byte) error {
 	if err != nil {
 		return errors.Wrap(err, "QueueMessage error")
 	}
+
+	fmt.Printf("Message Queue Size: %d\n", mc.messageQueue.QueueSize())
+
 	mc.dataAvailable <- true
 	return nil
 }

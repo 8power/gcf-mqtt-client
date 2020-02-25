@@ -102,17 +102,14 @@ func TestCommandMessage(t *testing.T) {
 
 func GetClientConfig() ClientConfig {
 	return ClientConfig{
-		Host:                   Host,
-		Port:                   Port,
-		RootCertFile:           RootCertFile,
-		PrivateKeyPEMFile:      PrivateKeyPEMFile,
-		ProjectID:              ProjectID,
-		CloudRegion:            CloudRegion,
-		RegistryID:             RegistryID,
-		DeviceID:               DeviceID,
-		ReconnectRetryAttempts: 5,
-		ReconnectRetryTimeout:  5 * time.Second,
-		CommunicationAttempts:  5,
+		Host:              Host,
+		Port:              Port,
+		RootCertFile:      RootCertFile,
+		PrivateKeyPEMFile: PrivateKeyPEMFile,
+		ProjectID:         ProjectID,
+		CloudRegion:       CloudRegion,
+		RegistryID:        RegistryID,
+		DeviceID:          DeviceID,
 	}
 }
 
@@ -283,8 +280,6 @@ func TestClient(t *testing.T) {
 	case <-byebye:
 		break
 	}
-
-	publishMessages(obj, t, mc, 10, 10)
 
 	// Now disconnect and ensure that nothing more is sent
 	mc.Disconnect()
