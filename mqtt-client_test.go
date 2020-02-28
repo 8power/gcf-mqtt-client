@@ -100,7 +100,7 @@ func TestCommandMessage(t *testing.T) {
 	fmt.Printf("Command: %s\n", js)
 }
 
-func GetClientConfig() ClientConfig {
+func getClientConfig() ClientConfig {
 	return ClientConfig{
 		Host:              Host,
 		Port:              Port,
@@ -113,9 +113,9 @@ func GetClientConfig() ClientConfig {
 	}
 }
 
-func TestTelemetryClient(t *testing.T) {
-	spec := NewMQTTClientConfig{
-		ClientConfig:         GetClientConfig(),
+func getMQTTClientConfig() NewMQTTClientConfig {
+	return NewMQTTClientConfig{
+		ClientConfig:         getClientConfig(),
 		DefaultMessageHander: testHander,
 		CredentialsProvider:  credentialsProvider,
 		OnConnectFunc: func(c *MQTTClient) error {
@@ -142,8 +142,40 @@ func TestTelemetryClient(t *testing.T) {
 			return nil
 		},
 	}
+}
 
-	mc, err := NewMQTTClient(spec)
+func TestFloodControl(t *testing.T) {
+	mc, err := NewMQTTClient(getMQTTClientConfig())
+	if err != nil {
+		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
+	}
+	defer mc.CtxCancelFunc()
+
+	obj := &TestMessage{
+		Mac: "AA:BB:CC:DD:EE:FF",
+	}
+	publishMessages(obj, t, mc, 1, 255, false)
+
+	err = mc.Connect()
+	if err != nil {
+		t.Errorf("Error raised in Connect: %v\n", err)
+	}
+
+	var waitTime = 2 * time.Minute
+	fmt.Printf("Now waiting for %f seconds, just to see what happens\n\n", waitTime.Seconds())
+	select {
+	case <-time.After(waitTime):
+		fmt.Println("Time's up")
+	}
+
+	err = mc.Disconnect()
+	if err != nil {
+		t.Errorf("Error raised during Disconnect: %v\n", err)
+	}
+}
+
+func TestTelemetryClient(t *testing.T) {
+	mc, err := NewMQTTClient(getMQTTClientConfig())
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 	}
@@ -202,31 +234,7 @@ func TestTelemetryClient(t *testing.T) {
 }
 
 func TestClient(t *testing.T) {
-	spec := NewMQTTClientConfig{
-		ClientConfig:         GetClientConfig(),
-		DefaultMessageHander: testHander,
-		CredentialsProvider:  credentialsProvider,
-		OnConnectFunc: func(c *MQTTClient) error {
-			err := c.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
-				fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-				fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
-			})
-			if err != nil {
-				return errors.Wrap(err, "RegisterConfigHandler error")
-			}
-
-			err = c.RegisterCommandHandler(func(client MQTT.Client, msg MQTT.Message) {
-				fmt.Printf("[command handler] Topic: %v\n", msg.Topic())
-				fmt.Printf("[command handler] Payload: %v\n", msg.Payload())
-			})
-			if err != nil {
-				return errors.Wrap(err, "RegisterCommandHandler error")
-			}
-			return nil
-		},
-	}
-
-	mc, err := NewMQTTClient(spec)
+	mc, err := NewMQTTClient(getMQTTClientConfig())
 	if err != nil {
 		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
 		return
@@ -245,7 +253,6 @@ func TestClient(t *testing.T) {
 		SequenceNumber: 1,
 		Timestamp:      int(time.Now().Unix()),
 	}
-	publishMessages(obj, t, mc, 0, 0)
 
 	delay := time.Duration(5)
 	fmt.Printf("Now waiting for %d minutes for JWT to expire, with %d second messages\n", delay, delay)
@@ -258,7 +265,7 @@ func TestClient(t *testing.T) {
 		for {
 			select {
 			case <-time.After(delay * time.Second):
-				publishMessages(obj, t, mc, i, i)
+				publishMessages(obj, t, mc, i, i, true)
 				i++
 				continue
 			case <-ctx2.Done():
@@ -287,10 +294,11 @@ func TestClient(t *testing.T) {
 	}
 }
 
-func publishMessages(obj *TestMessage, t *testing.T, mc *MQTTClient, start int, number int) {
+func publishMessages(obj *TestMessage, t *testing.T, mc *MQTTClient, start int, number int, wait bool) {
 	for i := start; i < start+number; i++ {
 		log.Printf("[main] Publishing Message #%d", i)
 		obj.SequenceNumber = i
+		obj.Timestamp = int(time.Now().UnixNano())
 
 		payload, err := json.Marshal(obj)
 		if err != nil {
@@ -300,7 +308,9 @@ func publishMessages(obj *TestMessage, t *testing.T, mc *MQTTClient, start int, 
 			if err != nil {
 				t.Errorf("PublishTelemetryEvent error %v", err)
 			}
-			time.Sleep(1 * time.Second)
+			if wait {
+				time.Sleep(1 * time.Second)
+			}
 		}
 	}
 }

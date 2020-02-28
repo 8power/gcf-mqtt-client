@@ -129,6 +129,14 @@ func connectionLostHandler(client MQTT.Client, err error) {
 	fmt.Printf("[connectionLostHandler] invoked")
 }
 
+// Maximum messages per sec per connection: 100
+var messageWaitTime = 15 * time.Millisecond
+
+// We want to read the message queue periodically
+// in case a connection is restored and we have
+// messages to send.
+var messageQueueCheckInterval = 1 * time.Minute
+
 func (mc *MQTTClient) publishHandler() {
 	for {
 		select {
@@ -136,15 +144,12 @@ func (mc *MQTTClient) publishHandler() {
 			return
 		case <-mc.dataAvailable:
 			mc.publishAllAvailable()
+		case <-time.After(messageQueueCheckInterval):
+			if mc.messageQueue.QueueSize() > 0 {
+				mc.publishAllAvailable()
+			}
 		}
 	}
-}
-
-func (mc *MQTTClient) isConnected() bool {
-	if mc == nil {
-		return false
-	}
-	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
 }
 
 func (mc *MQTTClient) publishAllAvailable() {
@@ -152,7 +157,6 @@ func (mc *MQTTClient) publishAllAvailable() {
 		fmt.Printf("[publishAllAvailable] client not connected\n")
 		return
 	}
-
 	for {
 		dst, ok, err := mc.messageQueue.FirstMessage()
 		if !ok {
@@ -163,12 +167,19 @@ func (mc *MQTTClient) publishAllAvailable() {
 		}
 		err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
 		if err != nil {
-			fmt.Printf("[publishAllAvailable] error %v", errors.Wrapf(err, "Publish error"))
+			fmt.Printf("[publishAllAvailable] error %v (%s)\n", errors.Wrapf(err, "Publish error"), dst.Payload)
 			return
 		}
 		mc.messageQueue.RemoveFirstMessage()
-		fmt.Printf("Message published. Queue Size: %d\n", mc.messageQueue.QueueSize())
+		time.Sleep(messageWaitTime)
 	}
+}
+
+func (mc *MQTTClient) isConnected() bool {
+	if mc == nil {
+		return false
+	}
+	return mc.Client.IsConnected() && mc.Client.IsConnectionOpen()
 }
 
 func tokenChecker(token MQTT.Token) error {
