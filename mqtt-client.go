@@ -66,6 +66,7 @@ type NewMQTTClientConfig struct {
 	DefaultMessageHander MQTT.MessageHandler
 	CredentialsProvider  MQTT.CredentialsProvider
 	OnConnectFunc        MQTTConnectFunction
+	OnConnectLost        MQTT.ConnectionLostHandler
 }
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient.
@@ -92,7 +93,7 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 	opts = opts.SetClientID(getMQTTClientID(spec.ClientConfig))
 	opts = opts.SetTLSConfig(tlscfg)
 	opts = opts.SetAutoReconnect(true)
-	opts = opts.SetConnectionLostHandler(connectionLostHandler)
+	opts = opts.SetConnectionLostHandler(spec.OnConnectLost)
 	opts = opts.SetCredentialsProvider(spec.CredentialsProvider)
 	opts = opts.SetDefaultPublishHandler(spec.DefaultMessageHander)
 
