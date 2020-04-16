@@ -19,7 +19,8 @@ jobs:
     - name: Get dependencies
 #      run: |
       run: go mod tidy
-      env: GOPRIVATE: "github.com/8power"
+      env: 
+        GOPRIVATE: "github.com/8power"
 # go get -v -t -d ./...
 #        if [ -f Gopkg.toml ]; then
 #            curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
