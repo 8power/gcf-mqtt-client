@@ -17,8 +17,9 @@ jobs:
       uses: actions/checkout@v2
 
     - name: Get dependencies
-#      run: |
-      run: go mod tidy
+      run: |
+        git config --global url."git@github.com:".insteadOf "https://github.com/"
+        go mod tidy
       env: 
         GOPRIVATE: "github.com/8power"
 # go get -v -t -d ./...
