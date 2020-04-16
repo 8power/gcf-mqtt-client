@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/RobHumphris/veh-structs/vehdata"
+	"github.com/8power/veh-structs/vehdata"
 	jwtGo "github.com/dgrijalva/jwt-go"
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
