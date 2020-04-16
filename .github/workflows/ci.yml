@@ -18,9 +18,10 @@ jobs:
 
     - name: Get dependencies
       run: |
-        git config --global url."git@github.com:".insteadOf "https://github.com/"
+      git config --global url."https://RobHumphris:${TOKEN}@github.com".insteadOf "https://github.com"
         go mod tidy
       env: 
+        TOKEN: ${{ secrets.ActionsSecret }}
         GOPRIVATE: "github.com/8power"
 # go get -v -t -d ./...
 #        if [ -f Gopkg.toml ]; then
