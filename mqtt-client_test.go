@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/RobHumphris/veh-structs/vehdata"
 	jwtGo "github.com/dgrijalva/jwt-go"
+	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
@@ -120,8 +122,15 @@ func getMQTTClientConfig() NewMQTTClientConfig {
 		CredentialsProvider:  credentialsProvider,
 		OnConnectFunc: func(c *MQTTClient) error {
 			err := c.RegisterConfigHandler(func(client MQTT.Client, msg MQTT.Message) {
+				//vse := vehdata.VehStateEvent{}
+				vse := vehdata.VehDeviceConfigs{}
 				fmt.Printf("[config handler] Topic: %v\n", msg.Topic())
-				fmt.Printf("[config handler] Payload: %s\n", msg.Payload())
+				err := proto.Unmarshal(msg.Payload(), &vse)
+				if err != nil {
+					fmt.Printf("proto.Unmarshal error %v\n", err)
+					return
+				}
+				fmt.Printf("[config handler] Payload: %s\n", vse)
 			})
 			if err != nil {
 				return errors.Wrap(err, "RegisterConfigHandler error")
@@ -141,36 +150,6 @@ func getMQTTClientConfig() NewMQTTClientConfig {
 			}
 			return nil
 		},
-	}
-}
-
-func TestFloodControl(t *testing.T) {
-	mc, err := NewMQTTClient(getMQTTClientConfig())
-	if err != nil {
-		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
-	}
-	defer mc.CtxCancelFunc()
-
-	obj := &TestMessage{
-		Mac: "AA:BB:CC:DD:EE:FF",
-	}
-	publishMessages(obj, t, mc, 1, 255, false)
-
-	err = mc.Connect()
-	if err != nil {
-		t.Errorf("Error raised in Connect: %v\n", err)
-	}
-
-	var waitTime = 2 * time.Minute
-	fmt.Printf("Now waiting for %f seconds, just to see what happens\n\n", waitTime.Seconds())
-	select {
-	case <-time.After(waitTime):
-		fmt.Println("Time's up")
-	}
-
-	err = mc.Disconnect()
-	if err != nil {
-		t.Errorf("Error raised during Disconnect: %v\n", err)
 	}
 }
 
@@ -208,7 +187,7 @@ func TestTelemetryClient(t *testing.T) {
 		}
 	}()
 
-	var waitTime = 10 * time.Second
+	var waitTime = 60 * time.Second
 	fmt.Printf("Now waiting for %f seconds, just to see what happens\n\n", waitTime.Seconds())
 	select {
 	case <-time.After(waitTime):
@@ -225,6 +204,36 @@ func TestTelemetryClient(t *testing.T) {
 	err = mc.RemoveConfigHandler()
 	if err != nil {
 		t.Errorf("RemoveConfigHandler Error: %v\n", err)
+	}
+
+	err = mc.Disconnect()
+	if err != nil {
+		t.Errorf("Error raised during Disconnect: %v\n", err)
+	}
+}
+
+func TestFloodControl(t *testing.T) {
+	mc, err := NewMQTTClient(getMQTTClientConfig())
+	if err != nil {
+		t.Errorf("Error raised in NewMQTTClient: %v\n", err)
+	}
+	defer mc.CtxCancelFunc()
+
+	obj := &TestMessage{
+		Mac: "AA:BB:CC:DD:EE:FF",
+	}
+	publishMessages(obj, t, mc, 1, 255, false)
+
+	err = mc.Connect()
+	if err != nil {
+		t.Errorf("Error raised in Connect: %v\n", err)
+	}
+
+	var waitTime = 2 * time.Minute
+	fmt.Printf("Now waiting for %f seconds, just to see what happens\n\n", waitTime.Seconds())
+	select {
+	case <-time.After(waitTime):
+		fmt.Println("Time's up")
 	}
 
 	err = mc.Disconnect()
