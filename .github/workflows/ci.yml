@@ -18,7 +18,7 @@ jobs:
 
     - name: Get dependencies
       run: |
-      git config --global url."https://RobHumphris:${TOKEN}@github.com".insteadOf "https://github.com"
+        git config --global url."https://RobHumphris:${TOKEN}@github.com".insteadOf "https://github.com"
         go mod tidy
       env: 
         TOKEN: ${{ secrets.ActionsSecret }}
