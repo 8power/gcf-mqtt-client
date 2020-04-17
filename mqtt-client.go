@@ -153,24 +153,40 @@ func (mc *MQTTClient) publishHandler() {
 	}
 }
 
-func (mc *MQTTClient) publishAllAvailable() {
+func (mc *MQTTClient) publishAllAvailable() error {
 	if !mc.isConnected() {
-		fmt.Printf("[publishAllAvailable] client not connected\n")
-		return
+		return fmt.Errorf("[publishAllAvailable] client not connected")
 	}
 	for {
 		dst, ok, err := mc.messageQueue.FirstMessage()
 		if !ok {
 			if err != nil {
-				fmt.Printf("[publishAllAvailable] error %v", errors.Wrap(err, "FirstMessage error"))
+				return errors.Wrap(err, "FirstMessage error")
 			}
-			return
+			return fmt.Errorf("FirstMessage not ok, but no error")
 		}
-		err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
+
+		err = retry.Do(func() error {
+			err = tokenChecker(mc.Client.Publish(dst.Topic, Qos, false, dst.Payload))
+			if err != nil {
+				e := errors.Wrapf(err, "Publish error")
+				fmt.Printf("[publishAllAvailable] error %v\n", e)
+				return e
+			}
+			return nil
+		},
+			retry.Attempts(4),
+			retry.Delay(mqttStandOff),
+			retry.OnRetry(func(u uint, err error) {
+				log.Printf("[publishAllAvailable] retrying Publish attempt: %d", u)
+			}),
+		)
+
 		if err != nil {
-			fmt.Printf("[publishAllAvailable] error %v (%s)\n", errors.Wrapf(err, "Publish error"), dst.Payload)
-			return
+			mc.Disconnect()
+			return err
 		}
+
 		mc.messageQueue.RemoveFirstMessage()
 		time.Sleep(messageWaitTime)
 	}
@@ -208,7 +224,7 @@ func (mc *MQTTClient) Connect() error {
 		return errors.Wrap(err, "MQTTClient Connect error")
 	}
 
-	retry.Do(func() error {
+	err = retry.Do(func() error {
 		if !mc.isConnected() {
 			return ErrorNotConnected
 		}
@@ -220,6 +236,10 @@ func (mc *MQTTClient) Connect() error {
 			log.Printf("[Connect] retesting connection attempt: %d", u)
 		}),
 	)
+	if err != nil {
+		return ErrorNotConnected
+	}
+
 	err = mc.OnConnectFunc(mc)
 	if err != nil {
 		return errors.Wrap(err, "onConnected callback error")
