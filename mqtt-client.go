@@ -127,7 +127,7 @@ func NewMQTTClient(spec NewMQTTClientConfig) (*MQTTClient, error) {
 }
 
 func connectionLostHandler(client MQTT.Client, err error) {
-	fmt.Printf("[connectionLostHandler] invoked")
+	log.Println("[connectionLostHandler] invoked")
 }
 
 // Maximum messages per sec per connection: 100
@@ -139,14 +139,20 @@ var messageWaitTime = 15 * time.Millisecond
 var messageQueueCheckInterval = 1 * time.Minute
 
 func (mc *MQTTClient) publishHandler() {
+	defer log.Println("[publishHandler] exiting")
 	for {
+		log.Println("[publishHandler] entering select")
 		select {
 		case <-mc.context.Done():
+			log.Println("[publishHandler] context.Done")
 			return
 		case <-mc.dataAvailable:
+			log.Println("[publishHandler] dataAvailable")
 			mc.publishAllAvailable()
 		case <-time.After(messageQueueCheckInterval):
+			log.Println("[publishHandler] messageQueueCheckInterval")
 			if mc.messageQueue.QueueSize() > 0 {
+				log.Println("[publishHandler] mc.messageQueue.QueueSize() > 0")
 				mc.publishAllAvailable()
 			}
 		}
@@ -154,6 +160,9 @@ func (mc *MQTTClient) publishHandler() {
 }
 
 func (mc *MQTTClient) publishAllAvailable() error {
+	log.Println("[publishAllAvailable] entering")
+	defer log.Println("[publishAllAvailable] exiting")
+
 	if !mc.isConnected() {
 		return fmt.Errorf("[publishAllAvailable] client not connected")
 	}
@@ -178,16 +187,18 @@ func (mc *MQTTClient) publishAllAvailable() error {
 			retry.Attempts(4),
 			retry.Delay(mqttStandOff),
 			retry.OnRetry(func(u uint, err error) {
-				log.Printf("[publishAllAvailable] retrying Publish attempt: %d", u)
+				log.Printf("[publishAllAvailable] retrying Publish attempt: %d\n", u)
 			}),
 		)
 
 		if err != nil {
+			log.Println("[publishAllAvailable] disconnecting")
 			mc.Disconnect()
 			return err
 		}
 
 		mc.messageQueue.RemoveFirstMessage()
+		fmt.Printf("[publishAllAvailable] message Queue Size: %d\n", mc.messageQueue.QueueSize())
 		time.Sleep(messageWaitTime)
 	}
 }
