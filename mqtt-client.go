@@ -192,8 +192,8 @@ func (mc *MQTTClient) publishAllAvailable() error {
 		)
 
 		if err != nil {
-			log.Println("[publishAllAvailable] disconnecting")
-			mc.Disconnect()
+			log.Printf("[publishAllAvailable] disconnecting due to error %v\n", err)
+			err = mc.Disconnect()
 			return err
 		}
 
