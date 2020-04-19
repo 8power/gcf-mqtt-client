@@ -260,9 +260,13 @@ func (mc *MQTTClient) Connect() error {
 
 // Disconnect from the MQTT client
 func (mc *MQTTClient) Disconnect() error {
+	log.Println("[Disconnect] starting")
+	defer log.Printf("[Disconnect] complete")
 	if mc == nil || !mc.isConnected() {
+		log.Println("[Disconnect] not connected")
 		return ErrorNotConnected
 	}
+	log.Println("[Disconnect] disconnecting")
 	mc.Client.Disconnect(250)
 	return nil
 }
