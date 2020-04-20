@@ -331,9 +331,14 @@ func (mc *MQTTClient) publish(topic string, payload []byte) error {
 		return errors.Wrap(err, "QueueMessage error")
 	}
 
-	fmt.Printf("Message Queue Size: %d\n", mc.messageQueue.QueueSize())
+	log.Printf("Message Queue Size: %d\n", mc.messageQueue.QueueSize())
 
-	mc.dataAvailable <- true
+	select {
+	case mc.dataAvailable <- true:
+		log.Println("dataAvailable signalled")
+	default:
+		log.Println("dataAvailable ***NOT*** signalled")
+	}
 	return nil
 }
 
