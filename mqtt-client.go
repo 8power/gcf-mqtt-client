@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	"github.com/pkg/errors"
@@ -67,6 +68,13 @@ type NewMQTTClientConfig struct {
 	CredentialsProvider  MQTT.CredentialsProvider
 	OnConnectFunc        MQTTConnectFunction
 	OnConnectLost        MQTT.ConnectionLostHandler
+}
+
+func init() {
+	MQTT.DEBUG = log.New(os.Stderr, "DEBUG    ", log.Ltime)
+	MQTT.WARN = log.New(os.Stderr, "WARNING  ", log.Ltime)
+	MQTT.CRITICAL = log.New(os.Stderr, "CRITICAL ", log.Ltime)
+	MQTT.ERROR = log.New(os.Stderr, "ERROR    ", log.Ltime)
 }
 
 // NewMQTTClient intialises and returns a new instance of a MQTTClient.
